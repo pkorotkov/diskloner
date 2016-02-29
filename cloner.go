@@ -1,26 +1,5 @@
 package main
 
-/*
-#include <stdlib.h>
-#include <stdint.h>
-#include <sys/ioctl.h>
-#include <linux/fs.h>
-
-#if defined(__linux__) && defined(_IOR) && !defined(BLKGETSIZE64)
-#define BLKGETSIZE64 _IOR(0x12, 114, size_t)
-#endif
-
-uint64_t
-get_disk_size_in_bytes(int fd) {
-	uint64_t fs;
-	if (0 > ioctl(fd, BLKGETSIZE64, &fs)) {
-		return 0;
-	}
-	return fs;
-}
-*/
-import "C"
-
 import (
 	"crypto/md5"
 	"crypto/sha1"
@@ -53,23 +32,14 @@ var (
 	sha512HasherPool = sync.Pool{New: func() interface{} { return sha512.New() }}
 )
 
-type DiskCloningReport struct {
-	StartTime    time.Time `json:"start_time"`
-	EndTime      time.Time `json:"end_time"`
-	BenchPath    string    `json:"bench_path"`
-	Type         string    `json:"type"`
-	SerialNumber string    `json:"serial_number"`
-	FullCapacity int64     `json:"full_capacity"`
-	MD5Hash      string    `json:"md5_hash"`
-	SHA1Hash     string    `json:"sha1_hash"`
-	SHA256Hash   string    `json:"sha256_hash"`
-	SHA512Hash   string    `json:"sha512_hash"`
-}
-
 type countWriter struct {
 	progress       chan float64
 	total, portion int64
 	count          int
+}
+
+func newCountWriter(progress chan float64, capacity int64) *countWriter {
+	return &countWriter{progress, capacity, 0, 1}
 }
 
 func (cw *countWriter) Close() error {
@@ -97,7 +67,7 @@ func CloneDisk(diskPath, imagePath string) (dcr *DiskCloningReport, err error) {
 	}
 	defer disk.Close()
 	serialNumber, devType := getDiskSNAndType(diskPath)
-	capacity := int64(C.get_disk_size_in_bytes(C.int(disk.Fd())))
+	capacity := getDiskCapacity(disk)
 	md5h := md5HasherPool.Get().(hash.Hash)
 	sha1h := sha1HasherPool.Get().(hash.Hash)
 	sha256h := sha256HasherPool.Get().(hash.Hash)
@@ -167,7 +137,7 @@ func CloneDisk(diskPath, imagePath string) (dcr *DiskCloningReport, err error) {
 	}()
 	// TODO: Use sync.Pool.
 	buf := make([]byte, logicalSectorSize)
-	cw := &countWriter{progress, capacity, 0, 1}
+	cw := newCountWriter(progress, capacity)
 	rr := newRescueSectorReader(disk, logicalSectorSize)
 	defer rr.Close()
 	// TODO: Remove this testing line someday.

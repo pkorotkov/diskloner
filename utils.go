@@ -1,18 +1,31 @@
 package main
 
 /*
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <sys/ioctl.h>
+#include <linux/fs.h>
+
+#if defined(__linux__) && defined(_IOR) && !defined(BLKGETSIZE64)
+#define BLKGETSIZE64 _IOR(0x12, 114, size_t)
+#endif
+
+uint64_t
+get_disk_capacity_in_bytes(int fd) {
+	uint64_t fs;
+	if (0 > ioctl(fd, BLKGETSIZE64, &fs)) {
+		return 0;
+	}
+	return fs;
+}
 */
 import "C"
 
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"unsafe"
 )
 
 // func ucharArrayToGoString(data *C.uchar) string {
@@ -37,6 +50,14 @@ import (
 // 	return nil
 // }
 
+func getDiskCapacity(disk *os.File) int64 {
+	return int64(C.get_disk_capacity_in_bytes(C.int(disk.Fd())))
+}
+
+func getRHSValue(bs []byte) string {
+	return string(bytes.TrimSpace(bytes.Split(bs, []byte{61})[1]))
+}
+
 func getDiskSNAndType(dp string) (sn, dt string) {
 	var (
 		err error
@@ -50,46 +71,14 @@ func getDiskSNAndType(dp string) (sn, dt string) {
 	for _, line := range bytes.Split(out, []byte{'\n'}) {
 		switch {
 		case bytes.Contains(line, []byte("ID_SERIAL_SHORT=")):
-			if lsn := string(bytes.TrimSpace(bytes.Split(line, []byte{61})[1])); len(lsn) != 0 {
+			if lsn := getRHSValue(line); len(lsn) != 0 {
 				sn = lsn
 			}
 		case bytes.Contains(line, []byte("DEVTYPE=")):
-			if ldt := string(bytes.TrimSpace(bytes.Split(line, []byte{61})[1])); len(ldt) != 0 {
+			if ldt := getRHSValue(line); len(ldt) != 0 {
 				dt = ldt
 			}
 		}
 	}
 	return
-}
-
-type rescueSectorReader struct {
-	cfd        *C.FILE
-	sectorSize int
-	zeroSector []byte
-}
-
-func newRescueSectorReader(file *os.File, ss int) *rescueSectorReader {
-	mode := C.CString("rb")
-	defer C.free(unsafe.Pointer(mode))
-	return &rescueSectorReader{C.fdopen((C.int)(file.Fd()), mode), ss, make([]byte, ss, ss)}
-}
-
-func (rsr *rescueSectorReader) Close() error {
-	C.fclose(rsr.cfd)
-	return nil
-}
-
-// TODO: Rewrite in pure Go.
-func (rsr *rescueSectorReader) Read(b []byte) (int, error) {
-	ss := rsr.sectorSize
-	r := C.fread(unsafe.Pointer(&b[0]), (C.size_t)(ss), 1, rsr.cfd)
-	if ir := int(r); ir != 1 {
-		if C.feof(rsr.cfd) != 0 {
-			return ir, io.EOF
-		}
-		b = rsr.zeroSector
-		C.fseek(rsr.cfd, (C.long)(ss), C.SEEK_CUR)
-		return ss, nil
-	}
-	return ss, nil
 }
