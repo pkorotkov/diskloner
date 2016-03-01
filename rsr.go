@@ -14,11 +14,11 @@ import (
 
 type rescueSectorReader struct {
 	cfd        *C.FILE
-	sectorSize int
+	sectorSize int32
 	zeroSector []byte
 }
 
-func newRescueSectorReader(file *os.File, ss int) *rescueSectorReader {
+func newRescueSectorReader(file *os.File, ss int32) *rescueSectorReader {
 	mode := C.CString("rb")
 	defer C.free(unsafe.Pointer(mode))
 	return &rescueSectorReader{C.fdopen((C.int)(file.Fd()), mode), ss, make([]byte, ss, ss)}
@@ -39,7 +39,7 @@ func (rsr *rescueSectorReader) Read(b []byte) (int, error) {
 		}
 		b = rsr.zeroSector
 		C.fseek(rsr.cfd, (C.long)(ss), C.SEEK_CUR)
-		return ss, nil
+		return int(ss), nil
 	}
-	return ss, nil
+	return int(ss), nil
 }

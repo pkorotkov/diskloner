@@ -17,8 +17,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const logicalSectorSize = 512
-
 var (
 	userRWFileMode = os.FileMode(0600)
 	allRWFileMode  = os.FileMode(0666)
@@ -67,7 +65,7 @@ func CloneDisk(diskPath, imagePath string) (dcr *DiskCloningReport, err error) {
 	}
 	defer disk.Close()
 	serialNumber, devType := getDiskSNAndType(diskPath)
-	capacity := getDiskCapacity(disk)
+	pss, lss, capacity := getDiskProfile(disk)
 	md5h := md5HasherPool.Get().(hash.Hash)
 	sha1h := sha1HasherPool.Get().(hash.Hash)
 	sha256h := sha256HasherPool.Get().(hash.Hash)
@@ -81,11 +79,14 @@ func CloneDisk(diskPath, imagePath string) (dcr *DiskCloningReport, err error) {
 				diskPath,
 				devType,
 				serialNumber,
+				pss,
+				lss,
 				capacity,
 				fmt.Sprintf("%x", md5h.Sum(nil)),
 				fmt.Sprintf("%x", sha1h.Sum(nil)),
 				fmt.Sprintf("%x", sha256h.Sum(nil)),
 				fmt.Sprintf("%x", sha512h.Sum(nil)),
+				nil,
 			}
 		}
 		md5h.Reset()
@@ -136,9 +137,9 @@ func CloneDisk(diskPath, imagePath string) (dcr *DiskCloningReport, err error) {
 		}
 	}()
 	// TODO: Use sync.Pool.
-	buf := make([]byte, logicalSectorSize)
+	buf := make([]byte, lss)
 	cw := newCountWriter(progress, capacity)
-	rr := newRescueSectorReader(disk, logicalSectorSize)
+	rr := newRescueSectorReader(disk, lss)
 	defer rr.Close()
 	// TODO: Remove this testing line someday.
 	// _, err = io.Copy(image, io.TeeReader(disk, io.MultiWriter(md5h, sha1h, sha256h, sha512h, cw)))

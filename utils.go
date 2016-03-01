@@ -13,10 +13,28 @@ package main
 uint64_t
 get_disk_capacity_in_bytes(int fd) {
 	uint64_t fs;
-	if (0 > ioctl(fd, BLKGETSIZE64, &fs)) {
+	if (ioctl(fd, BLKGETSIZE64, &fs) < 0) {
 		return 0;
 	}
 	return fs;
+}
+
+uint32_t
+get_disk_logical_sector_size(int fd) {
+	uint32_t lss;
+	if (ioctl(fd, BLKSSZGET, &lss) < 0) {
+		return 0;
+	}
+	return lss;
+}
+
+uint32_t
+get_disk_physical_sector_size(int fd) {
+	uint32_t pss;
+	if (ioctl(fd, BLKBSZGET, &pss) < 0) {
+		return 0;
+	}
+	return pss;
 }
 */
 import "C"
@@ -50,8 +68,11 @@ import (
 // 	return nil
 // }
 
-func getDiskCapacity(disk *os.File) int64 {
-	return int64(C.get_disk_capacity_in_bytes(C.int(disk.Fd())))
+func getDiskProfile(disk *os.File) (int32, int32, int64) {
+	c := int64(C.get_disk_capacity_in_bytes(C.int(disk.Fd())))
+	pss := int32(C.get_disk_physical_sector_size(C.int(disk.Fd())))
+	lss := int32(C.get_disk_logical_sector_size(C.int(disk.Fd())))
+	return pss, lss, c
 }
 
 func getRHSValue(bs []byte) string {
