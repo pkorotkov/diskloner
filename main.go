@@ -1,44 +1,64 @@
 package main
 
 import (
-	"encoding/json"
-	"flag"
-	"log"
 	"os"
+
+	. "github.com/docopt/docopt-go"
+	"github.com/pkorotkov/logstick"
+	"github.com/pkorotkov/safe"
 )
 
-var (
-	dp = flag.String("dp", "", "path to device (e.g. /dev/sda)")
-	ip = flag.String("ip", "", "path to DD image file")
-)
+var version = "0.1"
+
+var usage = `diskloner is a console app for cloning disks and partitions.
+
+Usage:
+  diskloner status
+  diskloner clone <disk-path> <image-path>...
+  diskloner -h | --help
+  diskloner -v | --version
+
+Options:
+  -h --help     Show this message.
+  -v --version  Show version.`
+
+var log = logstick.NewLogger()
 
 func init() {
-	log.SetPrefix("diskloner: ")
-	// Clear flags.
-	log.SetFlags(0)
+	log.AddWriter(os.Stderr)
 }
 
 func main() {
-	flag.Parse()
-	if len(*dp) == 0 || len(*ip) == 0 {
-		flag.PrintDefaults()
-		os.Exit(1)
+	defer safe.CatchExit()
+	defer log.Close()
+	if err := InitializeApp(); err != nil {
+		log.Error("failed to initialize application: %s", err)
+		safe.Exit(1)
 	}
-	cr, err := CloneDisk(*dp, *ip)
-	if err != nil {
-		log.Println("failed to perform cloning:", err)
-		os.Exit(2)
+	args, _ := Parse(usage, nil, true, version, false)
+	switch {
+	case args["status"]:
+		log.Info("fetching status...")
+	case args["clone"]:
+		// Don't allow go further if app isn't run under root.
+		if !isRoot() {
+			log.Error("application requires root privileges")
+			safe.Exit(2)
+		}
+		dc, err := NewDiskCloner(args["<disk-path>"].(string))
+		if err != nil {
+			log.Error("failed to create cloner: %s", err)
+			safe.Exit(3)
+		}
+		defer dc.Close()
+		if err = dc.SetImages(args["<image-path>"].([]string)); err != nil {
+			log.Error("failed to set images: %s", err)
+			safe.Exit(4)
+		}
+		dc.Clone()
+	default:
+		log.Error("invalid set of arguments")
+		safe.Exit(5)
 	}
-	bs, err := json.MarshalIndent(cr, "", "    ")
-	if err != nil {
-		log.Println("failed to marshal cloning report:", err)
-		os.Exit(3)
-	}
-	// Create info file.
-	iif, err := os.Create(*ip + ".info")
-	if err != nil {
-		os.Exit(4)
-	}
-	defer iif.Close()
-	iif.Write(bs)
+	safe.Exit(0)
 }

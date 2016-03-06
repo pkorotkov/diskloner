@@ -1,91 +1,91 @@
 package main
 
 /*
+#include <linux/fs.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
-#include <linux/fs.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-#if defined(__linux__) && defined(_IOR) && !defined(BLKGETSIZE64)
-#define BLKGETSIZE64 _IOR(0x12, 114, size_t)
+#if defined(__linux__)
+    #if defined(_IOR) && !defined(BLKGETSIZE64)
+        #define BLKGETSIZE64 _IOR(0x12, 114, size_t)
+    #endif
 #endif
 
 uint64_t
 get_disk_capacity_in_bytes(int fd) {
-	uint64_t fs;
-	if (ioctl(fd, BLKGETSIZE64, &fs) < 0) {
-		return 0;
-	}
-	return fs;
+    uint64_t fs;
+    if (ioctl(fd, BLKGETSIZE64, &fs) < 0) {
+        return 0;
+    }
+    return fs;
 }
 
 uint32_t
 get_disk_logical_sector_size(int fd) {
-	uint32_t lss;
-	if (ioctl(fd, BLKSSZGET, &lss) < 0) {
-		return 0;
-	}
-	return lss;
+    uint32_t lss;
+    if (ioctl(fd, BLKSSZGET, &lss) < 0) {
+        return 0;
+    }
+    return lss;
 }
 
 uint32_t
 get_disk_physical_sector_size(int fd) {
-	uint32_t pss;
-	if (ioctl(fd, BLKBSZGET, &pss) < 0) {
-		return 0;
-	}
-	return pss;
+    uint32_t pss;
+    if (ioctl(fd, BLKBSZGET, &pss) < 0) {
+        return 0;
+    }
+    return pss;
+}
+
+int
+is_file_block_device(int fd, int *ecode) {
+    struct stat sb;
+    *ecode = 0;
+    if (fstat(fd, &sb) != 0) {
+        *ecode = 1;
+        return 0;
+    }
+    return S_ISBLK(sb.st_mode);
 }
 */
 import "C"
 
 import (
 	"bytes"
-	"fmt"
+	. "fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
-// func ucharArrayToGoString(data *C.uchar) string {
-// 	return C.GoString((*C.char)(unsafe.Pointer(data)))
-// }
+func isProcessConnectedToTerminal() bool {
+	return C.isatty(1) == 1
+}
 
-// func cintArrayToGoIntSlice(ca *C.int, l C.size_t) []int {
-// 	hdr := reflect.SliceHeader{Data: uintptr(unsafe.Pointer(ca)), Len: int(l), Cap: int(l)}
-// 	cs := *(*[]C.int)(unsafe.Pointer(&hdr))
-// 	gs := make([]int, len(cs))
-// 	for i, v := range cs {
-// 		gs[i] = int(v)
-// 	}
-// 	return gs
-// }
+func isRoot() bool {
+	return C.geteuid() == 0
+}
 
-// func ioctl(fd, cmd, ptr uintptr) error {
-// 	_, _, e := unix.Syscall(unix.SYS_IOCTL, fd, cmd, ptr)
-// 	if e != 0 {
-// 		return e
-// 	}
-// 	return nil
-// }
-
-func getDiskProfile(disk *os.File) (int32, int32, int64) {
-	c := int64(C.get_disk_capacity_in_bytes(C.int(disk.Fd())))
-	pss := int32(C.get_disk_physical_sector_size(C.int(disk.Fd())))
-	lss := int32(C.get_disk_logical_sector_size(C.int(disk.Fd())))
-	return pss, lss, c
+func executeShellCommand(c string) ([]byte, error) {
+	return exec.Command("sh", "-c", c).Output()
 }
 
 func getRHSValue(bs []byte) string {
 	return string(bytes.TrimSpace(bytes.Split(bs, []byte{61})[1]))
 }
 
-func getDiskSNAndType(dp string) (sn, dt string) {
+func getDiskProfile(disk *os.File) (sn, dt string, pss, lss int32, c int64) {
 	var (
 		err error
 		out []byte
 	)
 	sn, dt = "???", "???"
-	out, err = exec.Command("sh", "-c", fmt.Sprintf("udevadm info --query=property %s", dp)).Output()
+	out, err = executeShellCommand(Sprintf("udevadm info --query=property %s", disk.Name()))
 	if err != nil {
 		return
 	}
@@ -101,5 +101,26 @@ func getDiskSNAndType(dp string) (sn, dt string) {
 			}
 		}
 	}
+	pss = int32(C.get_disk_physical_sector_size(C.int(disk.Fd())))
+	lss = int32(C.get_disk_logical_sector_size(C.int(disk.Fd())))
+	c = int64(C.get_disk_capacity_in_bytes(C.int(disk.Fd())))
 	return
+}
+
+func isFileBlockDevice(f *os.File) (bool, error) {
+	var ecode C.int
+	r := C.is_file_block_device(C.int(f.Fd()), &ecode)
+	if ecode != 0 {
+		return false, Errorf("failed to check file type")
+	}
+	return r != 0, nil
+}
+
+func createParentDirectories(path string) error {
+	d := filepath.Dir(path)
+	if err := os.MkdirAll(d, os.ModeDir); err != nil {
+		return err
+	}
+	// Set drwxr-xr-x permission mode.
+	return os.Chmod(d, os.FileMode(0755))
 }
