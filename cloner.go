@@ -46,7 +46,7 @@ func NewDiskCloner(diskPath string) (cloner *DiskCloner, err error) {
 	// Create progress file.
 	var pf *os.File
 	pfp := filepath.Join(definitions.AppPath.Progress, Sprintf("%d", os.Getpid()))
-	if pf, err = os.OpenFile(pfp, os.O_WRONLY|os.O_CREATE, os.FileMode(0644)); err != nil {
+	if pf, err = os.OpenFile(pfp, os.O_WRONLY|os.O_CREATE|os.O_SYNC, os.FileMode(0644)); err != nil {
 		return
 	}
 	cloner = &DiskCloner{dt, sn, pss, lss, c, disk, nil, pf}
