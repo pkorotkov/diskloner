@@ -14,11 +14,12 @@ var usage = `diskloner is a console app for cloning disks and partitions.
 
 Usage:
   diskloner status
-  diskloner clone <disk-path> <image-path>...
+  diskloner clone [-n | --name] <disk-path> <image-path>...
   diskloner -h | --help
   diskloner -v | --version
 
 Options:
+  -n --name     Human friendly name of cloning session [default: Unnamed].
   -h --help     Show this message.
   -v --version  Show version.`
 

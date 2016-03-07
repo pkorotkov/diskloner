@@ -2,7 +2,7 @@ package main
 
 import "time"
 
-type deviceReport struct {
+type diskProfile struct {
 	Type               string `json:"type"`
 	SerialNumber       string `json:"serial_number"`
 	PhysicalSectorSize int32  `json:"physical_sector_size"`
@@ -10,7 +10,7 @@ type deviceReport struct {
 	Capacity           int64  `json:"capacity"`
 }
 
-type hashReport struct {
+type hashes struct {
 	MD5Hash    string `json:"md5"`
 	SHA1Hash   string `json:"sha1"`
 	SHA256Hash string `json:"sha256"`
@@ -18,10 +18,9 @@ type hashReport struct {
 }
 
 type cloningReport struct {
-	StartTime            time.Time    `json:"start_time"`
-	EndTime              time.Time    `json:"end_time"`
-	Images               []string     `json:"images"`
-	Device               deviceReport `json:"device"`
-	Hashes               hashReport   `json:"hashes"`
-	UnreadLogicalSectors []int64      `json:"unread_logical_sectors"`
+	StartTime            time.Time   `json:"start_time"`
+	EndTime              time.Time   `json:"end_time"`
+	DiskProfile          diskProfile `json:"disk_profile"`
+	Hashes               hashes      `json:"hashes"`
+	UnreadLogicalSectors []int64     `json:"unread_logical_sectors"`
 }

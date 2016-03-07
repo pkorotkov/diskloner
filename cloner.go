@@ -127,15 +127,14 @@ func (dc *DiskCloner) clone(progress chan float64) {
 	cr := &cloningReport{
 		StartTime: ts,
 		EndTime:   time.Now(),
-		Images:    nil,
-		Device: deviceReport{
+		DiskProfile: diskProfile{
 			dc.deviceType,
 			dc.serialNumber,
 			dc.physicalSectorSize,
 			dc.logicalSectorSize,
 			dc.capacity,
 		},
-		Hashes: hashReport{
+		Hashes: hashes{
 			Sprintf("%x", md5h.Sum(nil)),
 			Sprintf("%x", sha1h.Sum(nil)),
 			Sprintf("%x", sha256h.Sum(nil)),

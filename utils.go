@@ -101,9 +101,10 @@ func getDiskProfile(disk *os.File) (sn, dt string, pss, lss int32, c int64) {
 			}
 		}
 	}
-	pss = int32(C.get_disk_physical_sector_size(C.int(disk.Fd())))
-	lss = int32(C.get_disk_logical_sector_size(C.int(disk.Fd())))
-	c = int64(C.get_disk_capacity_in_bytes(C.int(disk.Fd())))
+	fd := C.int(disk.Fd())
+	pss = int32(C.get_disk_physical_sector_size(fd))
+	lss = int32(C.get_disk_logical_sector_size(fd))
+	c = int64(C.get_disk_capacity_in_bytes(fd))
 	return
 }
 
