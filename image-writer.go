@@ -19,6 +19,7 @@ func newImageWriter(ip string, c int64) (*imageWriter, error) {
 		return nil, err
 	}
 	if err = file.Truncate(c); err != nil {
+		_ = abort(file)
 		return nil, err
 	}
 	return &imageWriter{false, file}, nil
@@ -31,11 +32,15 @@ func (iw *imageWriter) Close() error {
 	return iw.file.Close()
 }
 
+func abort(file *os.File) error {
+	p := file.Name()
+	file.Close()
+	return os.Remove(p)
+}
+
 func (iw *imageWriter) Abort() error {
 	iw.aborted = true
-	p := iw.file.Name()
-	iw.file.Close()
-	return os.Remove(p)
+	return abort(iw.file)
 }
 
 func (iw *imageWriter) Aborted() bool {

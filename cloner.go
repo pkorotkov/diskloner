@@ -28,7 +28,7 @@ type DiskCloner struct {
 	progressFile       *os.File
 }
 
-func NewDiskCloner(diskPath string) (cloner *DiskCloner, err error) {
+func NewDiskCloner(diskPath string, imagePaths []string) (cloner *DiskCloner, err error) {
 	// Open disk to read.
 	var disk *os.File
 	if disk, err = os.OpenFile(diskPath, unix.O_RDONLY|unix.O_NONBLOCK, os.FileMode(0400)); err != nil {
@@ -42,14 +42,23 @@ func NewDiskCloner(diskPath string) (cloner *DiskCloner, err error) {
 		err = Errorf("given path does not point to block device")
 		return
 	}
-	sn, dt, pss, lss, c := getDiskProfile(disk)
+	dt, sn, pss, lss, c := getDiskProfile(disk)
 	// Create progress file.
 	var pf *os.File
 	pfp := filepath.Join(definitions.AppPath.Progress, Sprintf("%d", os.Getpid()))
 	if pf, err = os.OpenFile(pfp, os.O_WRONLY|os.O_CREATE|os.O_SYNC, os.FileMode(0644)); err != nil {
 		return
 	}
-	cloner = &DiskCloner{dt, sn, pss, lss, c, disk, nil, pf}
+	var iws []*imageWriter
+	for _, ip := range imagePaths {
+		iw, err := newImageWriter(ip, c)
+		if err != nil {
+			err = Errorf("failed to allocate image file %s: %s", ip, err)
+			return
+		}
+		iws = append(iws, iw)
+	}
+	cloner = &DiskCloner{dt, sn, pss, lss, c, disk, iws, pf}
 	return
 }
 
@@ -61,18 +70,6 @@ func (dc *DiskCloner) Close() error {
 	dc.progressFile.Close()
 	os.Remove(pfp)
 	return dc.disk.Close()
-}
-
-func (dc *DiskCloner) SetImages(ips []string) error {
-	for _, ip := range ips {
-		iw, err := newImageWriter(ip, dc.capacity)
-		if err != nil {
-			dc.imageWriters = nil
-			return Errorf("failed to allocate image %s: %s", ip, err)
-		}
-		dc.imageWriters = append(dc.imageWriters, iw)
-	}
-	return nil
 }
 
 func (dc *DiskCloner) clone(progress chan float64) {

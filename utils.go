@@ -79,12 +79,12 @@ func getRHSValue(bs []byte) string {
 	return string(bytes.TrimSpace(bytes.Split(bs, []byte{61})[1]))
 }
 
-func getDiskProfile(disk *os.File) (sn, dt string, pss, lss int32, c int64) {
+func getDiskProfile(disk *os.File) (dt, sn string, pss, lss int32, c int64) {
 	var (
 		err error
 		out []byte
 	)
-	sn, dt = "???", "???"
+	dt, sn = "???", "???"
 	out, err = executeShellCommand(Sprintf("udevadm info --query=property %s", disk.Name()))
 	if err != nil {
 		return

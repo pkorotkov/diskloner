@@ -46,20 +46,16 @@ func main() {
 			log.Error("application requires root privileges")
 			safe.Exit(2)
 		}
-		dc, err := NewDiskCloner(args["<disk-path>"].(string))
+		dc, err := NewDiskCloner(args["<disk-path>"].(string), args["<image-path>"].([]string))
 		if err != nil {
 			log.Error("failed to create cloner: %s", err)
 			safe.Exit(3)
 		}
 		defer dc.Close()
-		if err = dc.SetImages(args["<image-path>"].([]string)); err != nil {
-			log.Error("failed to set images: %s", err)
-			safe.Exit(4)
-		}
 		dc.Clone()
 	default:
 		log.Error("invalid set of arguments")
-		safe.Exit(5)
+		safe.Exit(4)
 	}
 	safe.Exit(0)
 }
