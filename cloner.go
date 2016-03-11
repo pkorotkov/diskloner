@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	. "./internal"
@@ -64,102 +65,102 @@ func (cs *CloningSession) Close() error {
 	return cs.disk.Close()
 }
 
-func (cs *CloningSession) clone(progress chan []byte, quit chan os.Signal) {
-	reports := make(chan *cloningReport)
-	go func(q chan os.Signal) {
-		defer close(progress)
-		lss := int(cs.logicalSectorSize)
-		sector := make([]byte, lss)
-		zeroSector := make([]byte, lss, lss)
-		count, portion := 1.0, 0
-		md5h, sha1h, sha256h, sha512h := md5.New(), sha1.New(), sha256.New(), sha512.New()
-		hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h)
-		var unreadSectors []int64
-		ts := time.Now()
-		for {
-			select {
-			case <-q:
-				reports <- nil
-				return
-			default:
-				n, err := cs.disk.Read(sector)
-				cp, _ := cs.disk.Seek(0, 1)
-				if err != nil {
-					if err != io.EOF {
-						log.Warning("detected unreadable sector at offset %d", cp)
-						unreadSectors = append(unreadSectors, cp)
-						sector, n = zeroSector, lss
-						// Jump to the next sector.
-						cs.disk.Seek(int64(lss), 1)
-					} else {
-						// This is the check of final call with (0, io.EOF) result.
-						if n == 0 {
-							reports <- &cloningReport{
-								StartTime: ts,
-								EndTime:   time.Now(),
-								DiskProfile: diskProfile{
-									cs.deviceType,
-									cs.serialNumber,
-									cs.physicalSectorSize,
-									cs.logicalSectorSize,
-									cs.capacity,
-								},
-								Hashes: hashes{
-									Sprintf("%x", md5h.Sum(nil)),
-									Sprintf("%x", sha1h.Sum(nil)),
-									Sprintf("%x", sha256h.Sum(nil)),
-									Sprintf("%x", sha512h.Sum(nil)),
-								},
-								UnreadLogicalSectors: unreadSectors,
-							}
-							return
+func (cs *CloningSession) readSectors(progress chan []byte, reports chan *cloningReport, quit chan os.Signal) {
+	defer close(progress)
+	lss := int(cs.logicalSectorSize)
+	sector := make([]byte, lss)
+	zeroSector := make([]byte, lss, lss)
+	count, portion := 1.0, 0
+	md5h, sha1h, sha256h, sha512h := md5.New(), sha1.New(), sha256.New(), sha512.New()
+	hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h)
+	var unreadSectors []int64
+	ts := time.Now()
+	for {
+		select {
+		case <-quit:
+			reports <- nil
+			return
+		default:
+			n, err := cs.disk.Read(sector)
+			cp, _ := cs.disk.Seek(0, 1)
+			if err != nil {
+				if err != io.EOF {
+					log.Warning("detected unreadable sector at offset %d", cp)
+					unreadSectors = append(unreadSectors, cp)
+					sector, n = zeroSector, lss
+					// Jump to the next sector.
+					cs.disk.Seek(int64(lss), 1)
+				} else {
+					// This is the check of final call with (0, io.EOF) result.
+					if n == 0 {
+						reports <- &cloningReport{
+							SessionName: cs.name,
+							StartTime:   ts,
+							EndTime:     time.Now(),
+							DiskProfile: diskProfile{
+								cs.deviceType,
+								cs.serialNumber,
+								cs.physicalSectorSize,
+								cs.logicalSectorSize,
+								cs.capacity,
+							},
+							Hashes: hashes{
+								Sprintf("%x", md5h.Sum(nil)),
+								Sprintf("%x", sha1h.Sum(nil)),
+								Sprintf("%x", sha256h.Sum(nil)),
+								Sprintf("%x", sha512h.Sum(nil)),
+							},
+							UnreadLogicalSectors: unreadSectors,
 						}
+						return
 					}
-				}
-				hw.Write(sector)
-				for _, iw := range cs.imageWriters {
-					if iw.Aborted() {
-						continue
-					}
-					_, err = iw.Write(sector)
-					if err != nil {
-						log.Error("failed to write in %s: %s", iw.file.Name(), err)
-						p := iw.file.Name()
-						// Stop writing to this writer - abort it.
-						if err = iw.Abort(); err != nil {
-							log.Warning("failed to fully abort image writer %s", p)
-						}
-					}
-				}
-				// Report progress in form XXX.YYY%.
-				portion += lss
-				if p := float64(portion) / float64(cs.capacity); p >= count*0.0001 {
-					count++
-					progress <- []byte(strconv.FormatFloat(100.0*p, 'f', 3, 32))
 				}
 			}
-		}
-	}(quit)
-
-	select {
-	case r := <-reports:
-		if r != nil {
-			bs, _ := json.MarshalIndent(r, "", "    ")
+			hw.Write(sector)
 			for _, iw := range cs.imageWriters {
 				if iw.Aborted() {
 					continue
 				}
-				// Create info file.
-				iif, err := os.Create(iw.file.Name() + ".info")
+				_, err = iw.Write(sector)
 				if err != nil {
-					log.Error("failed to create info file %s", err)
-					continue
+					log.Error("failed to write in %s: %s", iw.file.Name(), err)
+					p := iw.file.Name()
+					// Stop writing to this writer - abort it.
+					if err = iw.Abort(); err != nil {
+						log.Warning("failed to fully abort image writer %s", p)
+					}
 				}
-				iif.Write(bs)
-				iif.Close()
+			}
+			// Report progress in form XXX.YYY%.
+			portion += lss
+			if p := float64(portion) / float64(cs.capacity); p >= count*0.0001 {
+				count++
+				progress <- []byte(strconv.FormatFloat(100.0*p, 'f', 3, 32))
 			}
 		}
-		return
+	}
+}
+
+func (cs *CloningSession) clone(progress chan []byte, quit chan os.Signal) {
+	reports := make(chan *cloningReport)
+	go cs.readSectors(progress, reports, quit)
+	// Wait for readSectors signals to reports (value - when completed successfully, nil - otherwise).
+	r := <-reports
+	if r != nil {
+		bs, _ := json.MarshalIndent(r, "", "    ")
+		for _, iw := range cs.imageWriters {
+			if iw.Aborted() {
+				continue
+			}
+			// Create info file.
+			iif, err := os.Create(iw.file.Name() + ".info")
+			if err != nil {
+				log.Error("failed to create info file %s", err)
+				continue
+			}
+			iif.Write(bs)
+			iif.Close()
+		}
 	}
 }
 
@@ -178,7 +179,10 @@ func (cs *CloningSession) Clone(quit chan os.Signal) {
 	for p := range progress {
 		conn, err := net.DialUnix("unix", nil, address)
 		if err != nil {
-			log.Warning("failed to establish monitoring connection: %s", err)
+			// TODO: Clean it up.
+			if !strings.HasSuffix(err.Error(), "no such file or directory") {
+				log.Warning("failed to establish monitoring connection: %s", err)
+			}
 			continue
 		}
 		_, err = conn.Write(p)
@@ -187,6 +191,7 @@ func (cs *CloningSession) Clone(quit chan os.Signal) {
 		}
 		conn.Close()
 	}
+	// Wait until clone function signals its completetion.
 	<-done
 	return
 }
