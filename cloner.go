@@ -50,6 +50,10 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		}
 		iws = append(iws, iw)
 	}
+	if err = createDirectoriesFor(FSEntity.File, AppPath.ProgressFile); err != nil {
+		err = Errorf("failed to create directory for progress file: %s", err)
+		return
+	}
 	cs = &CloningSession{name, diskProfile{dt, sn, pss, lss, c}, disk, iws}
 	return
 }
@@ -91,6 +95,7 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 					if n == 0 {
 						reports <- &cloningReport{
 							SessionName: cs.name,
+							UUID:        getUUID(),
 							StartTime:   ts,
 							EndTime:     time.Now(),
 							DiskProfile: cs.diskProfile,
@@ -121,7 +126,7 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 					}
 				}
 			}
-			// Report progress in form XXX.YYY%.
+			// Report progress.
 			portion += lss
 			if p := float64(portion) / float64(cs.diskProfile.Capacity); p >= count*0.0001 {
 				count++
@@ -165,7 +170,7 @@ func (cs *CloningSession) Clone(quit chan os.Signal) {
 		}()
 		cs.clone(progress, quit)
 	}()
-	address := &net.UnixAddr{AppPath.Progress, "unix"}
+	address := &net.UnixAddr{AppPath.ProgressFile, "unix"}
 	for pm := range progress {
 		conn, err := net.DialUnix("unix", nil, address)
 		if err != nil {

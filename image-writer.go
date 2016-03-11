@@ -11,7 +11,7 @@ type imageWriter struct {
 
 func newImageWriter(ip string, c int64) (*imageWriter, error) {
 	var err error
-	if err = createParentDirectoriesFor(FSEntity.File, ip); err != nil {
+	if err = createDirectoriesFor(FSEntity.File, ip); err != nil {
 		return nil, err
 	}
 	var file *os.File
@@ -48,8 +48,5 @@ func (iw *imageWriter) Aborted() bool {
 }
 
 func (iw *imageWriter) Write(bs []byte) (int, error) {
-	// if iw.aborted {
-	// 	return 0, imageWriterAbortedError(Sprintf("image writer %s is aborted", iw.path))
-	// }
 	return iw.file.Write(bs)
 }

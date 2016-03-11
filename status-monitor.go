@@ -14,12 +14,12 @@ type message struct {
 }
 
 func monitorStatus(quit chan os.Signal) {
-	l, err := net.ListenUnix("unix", &net.UnixAddr{AppPath.Progress, "unix"})
+	l, err := net.ListenUnix("unix", &net.UnixAddr{AppPath.ProgressFile, "unix"})
 	if err != nil {
 		log.Error("failed to establish monitoring connection: %s", err)
 		return
 	}
-	defer os.Remove(AppPath.Progress)
+	defer os.Remove(AppPath.ProgressFile)
 	messages := make(chan *ProgressMessage)
 	for {
 		go func(m chan *ProgressMessage) {

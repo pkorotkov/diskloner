@@ -58,9 +58,12 @@ import "C"
 import (
 	"bytes"
 	. "fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	. "./internal"
 )
 
 func isProcessConnectedToTerminal() bool {
@@ -125,7 +128,7 @@ var FSEntity struct {
 	File, Directory fsEntity
 }{1, 2}
 
-func createParentDirectoriesFor(fse fsEntity, path string) (err error) {
+func createDirectoriesFor(fse fsEntity, path string) (err error) {
 	var d string
 	switch fse {
 	case FSEntity.File:
@@ -137,4 +140,10 @@ func createParentDirectoriesFor(fse fsEntity, path string) (err error) {
 		return
 	}
 	return
+}
+
+// getUUID generates a random UUID according to RFC 4122.
+func getUUID() string {
+	uuid, _ := ioutil.ReadFile(AppPath.UUIDFile)
+	return string(bytes.TrimSpace(uuid))
 }

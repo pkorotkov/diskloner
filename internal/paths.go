@@ -1,7 +1,16 @@
 package internal
 
+import "runtime"
+
 var AppPath struct {
-	Progress string
-} = struct {
-	Progress string
-}{"/var/run/diskloner/progress"}
+	ProgressFile string
+	UUIDFile     string
+}
+
+func init() {
+	switch runtime.GOOS {
+	case "linux":
+		AppPath.ProgressFile = "/var/run/diskloner/progress"
+		AppPath.UUIDFile = "/proc/sys/kernel/random/uuid"
+	}
+}

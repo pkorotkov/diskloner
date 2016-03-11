@@ -7,7 +7,6 @@ import (
 	. "github.com/docopt/docopt-go"
 	"github.com/pkorotkov/logstick"
 	"github.com/pkorotkov/safe"
-
 	"golang.org/x/sys/unix"
 )
 
