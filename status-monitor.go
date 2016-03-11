@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/gob"
 	"net"
 	"os"
 
@@ -19,10 +20,10 @@ func monitorStatus(quit chan os.Signal) {
 		return
 	}
 	defer os.Remove(AppPath.Progress)
-	messages := make(chan []byte)
+	messages := make(chan *ProgressMessage)
 	for {
-		go func(m chan []byte) {
-			mb := make([]byte, 16)
+		go func(m chan *ProgressMessage) {
+			var mp ProgressMessage
 			conn, err := l.AcceptUnix()
 			if err != nil {
 				log.Error("got accept error: %s", err)
@@ -30,19 +31,20 @@ func monitorStatus(quit chan os.Signal) {
 				return
 			}
 			defer conn.Close()
-			_, err = conn.Read(mb)
+			err = gob.NewDecoder(conn).Decode(&mp)
 			if err != nil {
-				log.Error("failed to read message: %s", err)
+				log.Error("failed to read progress message: %s", err)
 				m <- nil
 				return
 			}
-			m <- mb
+			m <- &mp
 			return
 		}(messages)
 		select {
 		case m := <-messages:
 			if m != nil {
-				log.Info("message %s", m)
+				// TODO: Change output format.
+				log.Info("message %v", m)
 			}
 		case <-quit:
 			return

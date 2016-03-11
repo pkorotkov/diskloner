@@ -5,12 +5,12 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/gob"
 	"encoding/json"
 	. "fmt"
 	"io"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,14 +20,10 @@ import (
 )
 
 type CloningSession struct {
-	name               string
-	deviceType         string
-	serialNumber       string
-	physicalSectorSize int32
-	logicalSectorSize  int32
-	capacity           int64
-	disk               *os.File
-	imageWriters       []*imageWriter
+	name         string
+	diskProfile  diskProfile
+	disk         *os.File
+	imageWriters []*imageWriter
 }
 
 func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningSession, err error) {
@@ -54,7 +50,7 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		}
 		iws = append(iws, iw)
 	}
-	cs = &CloningSession{name, dt, sn, pss, lss, c, disk, iws}
+	cs = &CloningSession{name, diskProfile{dt, sn, pss, lss, c}, disk, iws}
 	return
 }
 
@@ -65,9 +61,9 @@ func (cs *CloningSession) Close() error {
 	return cs.disk.Close()
 }
 
-func (cs *CloningSession) readSectors(progress chan []byte, reports chan *cloningReport, quit chan os.Signal) {
+func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports chan *cloningReport, quit chan os.Signal) {
 	defer close(progress)
-	lss := int(cs.logicalSectorSize)
+	lss := int(cs.diskProfile.LogicalSectorSize)
 	sector := make([]byte, lss)
 	zeroSector := make([]byte, lss, lss)
 	count, portion := 1.0, 0
@@ -97,13 +93,7 @@ func (cs *CloningSession) readSectors(progress chan []byte, reports chan *clonin
 							SessionName: cs.name,
 							StartTime:   ts,
 							EndTime:     time.Now(),
-							DiskProfile: diskProfile{
-								cs.deviceType,
-								cs.serialNumber,
-								cs.physicalSectorSize,
-								cs.logicalSectorSize,
-								cs.capacity,
-							},
+							DiskProfile: cs.diskProfile,
 							Hashes: hashes{
 								Sprintf("%x", md5h.Sum(nil)),
 								Sprintf("%x", sha1h.Sum(nil)),
@@ -124,24 +114,24 @@ func (cs *CloningSession) readSectors(progress chan []byte, reports chan *clonin
 				_, err = iw.Write(sector)
 				if err != nil {
 					log.Error("failed to write in %s: %s", iw.file.Name(), err)
-					p := iw.file.Name()
+					fp := iw.file.Name()
 					// Stop writing to this writer - abort it.
 					if err = iw.Abort(); err != nil {
-						log.Warning("failed to fully abort image writer %s", p)
+						log.Warning("failed to fully abort image writer %s", fp)
 					}
 				}
 			}
 			// Report progress in form XXX.YYY%.
 			portion += lss
-			if p := float64(portion) / float64(cs.capacity); p >= count*0.0001 {
+			if p := float64(portion) / float64(cs.diskProfile.Capacity); p >= count*0.0001 {
 				count++
-				progress <- []byte(strconv.FormatFloat(100.0*p, 'f', 3, 32))
+				progress <- &ProgressMessage{cs.name, 100.0 * p}
 			}
 		}
 	}
 }
 
-func (cs *CloningSession) clone(progress chan []byte, quit chan os.Signal) {
+func (cs *CloningSession) clone(progress chan *ProgressMessage, quit chan os.Signal) {
 	reports := make(chan *cloningReport)
 	go cs.readSectors(progress, reports, quit)
 	// Wait for readSectors signals to reports (value - when completed successfully, nil - otherwise).
@@ -167,7 +157,7 @@ func (cs *CloningSession) clone(progress chan []byte, quit chan os.Signal) {
 func (cs *CloningSession) Clone(quit chan os.Signal) {
 	var (
 		done     = make(chan struct{})
-		progress = make(chan []byte)
+		progress = make(chan *ProgressMessage)
 	)
 	go func() {
 		defer func() {
@@ -176,18 +166,18 @@ func (cs *CloningSession) Clone(quit chan os.Signal) {
 		cs.clone(progress, quit)
 	}()
 	address := &net.UnixAddr{AppPath.Progress, "unix"}
-	for p := range progress {
+	for pm := range progress {
 		conn, err := net.DialUnix("unix", nil, address)
 		if err != nil {
-			// TODO: Clean it up.
+			// TODO: Clean it up somehow.
 			if !strings.HasSuffix(err.Error(), "no such file or directory") {
 				log.Warning("failed to establish monitoring connection: %s", err)
 			}
 			continue
 		}
-		_, err = conn.Write(p)
+		err = gob.NewEncoder(conn).Encode(pm)
 		if err != nil {
-			log.Info("Not sent: %s", p)
+			log.Error("progress message not sent: %s", err)
 		}
 		conn.Close()
 	}

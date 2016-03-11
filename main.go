@@ -26,10 +26,12 @@ Options:
   -h, --help              Show this message.
   -v, --version           Show version.`
 
-var log = logstick.NewLogger()
+var (
+	log = logstick.NewLogger()
+)
 
 func init() {
-	log.AddWriter(os.Stderr)
+	_ = log.AddWriter(os.Stderr)
 }
 
 func main() {
