@@ -8,16 +8,18 @@ import (
 	"encoding/json"
 	. "fmt"
 	"io"
+	"net"
 	"os"
-	"path/filepath"
+	"strconv"
 	"time"
 
-	"./internal/definitions"
+	. "./internal"
 
 	"golang.org/x/sys/unix"
 )
 
-type DiskCloner struct {
+type CloningSession struct {
+	name               string
 	deviceType         string
 	serialNumber       string
 	physicalSectorSize int32
@@ -25,10 +27,9 @@ type DiskCloner struct {
 	capacity           int64
 	disk               *os.File
 	imageWriters       []*imageWriter
-	progressFile       *os.File
 }
 
-func NewDiskCloner(diskPath string, imagePaths []string) (cloner *DiskCloner, err error) {
+func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningSession, err error) {
 	// Open disk to read.
 	var disk *os.File
 	if disk, err = os.OpenFile(diskPath, unix.O_RDONLY|unix.O_NONBLOCK, os.FileMode(0400)); err != nil {
@@ -43,126 +44,149 @@ func NewDiskCloner(diskPath string, imagePaths []string) (cloner *DiskCloner, er
 		return
 	}
 	dt, sn, pss, lss, c := getDiskProfile(disk)
-	// Create progress file.
-	var pf *os.File
-	pfp := filepath.Join(definitions.AppPath.Progress, Sprintf("%d", os.Getpid()))
-	if pf, err = os.OpenFile(pfp, os.O_WRONLY|os.O_CREATE|os.O_SYNC, os.FileMode(0644)); err != nil {
-		return
-	}
 	var iws []*imageWriter
 	for _, ip := range imagePaths {
-		iw, err := newImageWriter(ip, c)
-		if err != nil {
-			err = Errorf("failed to allocate image file %s: %s", ip, err)
+		iw, e := newImageWriter(ip, c)
+		if e != nil {
+			err = Errorf("failed to allocate image file %s: %s", ip, e)
 			return
 		}
 		iws = append(iws, iw)
 	}
-	cloner = &DiskCloner{dt, sn, pss, lss, c, disk, iws, pf}
+	cs = &CloningSession{name, dt, sn, pss, lss, c, disk, iws}
 	return
 }
 
-func (dc *DiskCloner) Close() error {
-	for _, iw := range dc.imageWriters {
+func (cs *CloningSession) Close() error {
+	for _, iw := range cs.imageWriters {
 		iw.Close()
 	}
-	pfp := dc.progressFile.Name()
-	dc.progressFile.Close()
-	os.Remove(pfp)
-	return dc.disk.Close()
+	return cs.disk.Close()
 }
 
-func (dc *DiskCloner) clone(progress chan float64) {
-	lss := int(dc.logicalSectorSize)
-	sector := make([]byte, lss)
-	zeroSector := make([]byte, lss, lss)
-	md5h, sha1h, sha256h, sha512h := md5.New(), sha1.New(), sha256.New(), sha512.New()
-	hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h)
-	ts := time.Now()
-	count, portion := 1.0, 0
-	var unreadSectors []int64
-	for {
-		n, err := dc.disk.Read(sector)
-		cp, _ := dc.disk.Seek(0, 1)
-		if err != nil {
-			if err != io.EOF {
-				log.Warning("detected unreadable sector at offset %d", cp)
-				unreadSectors = append(unreadSectors, cp)
-				sector, n = zeroSector, lss
-				// Jump to the next sector.
-				dc.disk.Seek(int64(lss), 1)
-			} else {
-				// This is the check of final call with (0, io.EOF) result.
-				if n == 0 {
-					break
+func (cs *CloningSession) clone(progress chan []byte, quit chan os.Signal) {
+	reports := make(chan *cloningReport)
+	go func(q chan os.Signal) {
+		defer close(progress)
+		lss := int(cs.logicalSectorSize)
+		sector := make([]byte, lss)
+		zeroSector := make([]byte, lss, lss)
+		count, portion := 1.0, 0
+		md5h, sha1h, sha256h, sha512h := md5.New(), sha1.New(), sha256.New(), sha512.New()
+		hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h)
+		var unreadSectors []int64
+		ts := time.Now()
+		for {
+			select {
+			case <-q:
+				reports <- nil
+				return
+			default:
+				n, err := cs.disk.Read(sector)
+				cp, _ := cs.disk.Seek(0, 1)
+				if err != nil {
+					if err != io.EOF {
+						log.Warning("detected unreadable sector at offset %d", cp)
+						unreadSectors = append(unreadSectors, cp)
+						sector, n = zeroSector, lss
+						// Jump to the next sector.
+						cs.disk.Seek(int64(lss), 1)
+					} else {
+						// This is the check of final call with (0, io.EOF) result.
+						if n == 0 {
+							reports <- &cloningReport{
+								StartTime: ts,
+								EndTime:   time.Now(),
+								DiskProfile: diskProfile{
+									cs.deviceType,
+									cs.serialNumber,
+									cs.physicalSectorSize,
+									cs.logicalSectorSize,
+									cs.capacity,
+								},
+								Hashes: hashes{
+									Sprintf("%x", md5h.Sum(nil)),
+									Sprintf("%x", sha1h.Sum(nil)),
+									Sprintf("%x", sha256h.Sum(nil)),
+									Sprintf("%x", sha512h.Sum(nil)),
+								},
+								UnreadLogicalSectors: unreadSectors,
+							}
+							return
+						}
+					}
+				}
+				hw.Write(sector)
+				for _, iw := range cs.imageWriters {
+					if iw.Aborted() {
+						continue
+					}
+					_, err = iw.Write(sector)
+					if err != nil {
+						log.Error("failed to write in %s: %s", iw.file.Name(), err)
+						p := iw.file.Name()
+						// Stop writing to this writer - abort it.
+						if err = iw.Abort(); err != nil {
+							log.Warning("failed to fully abort image writer %s", p)
+						}
+					}
+				}
+				// Report progress in form XXX.YYY%.
+				portion += lss
+				if p := float64(portion) / float64(cs.capacity); p >= count*0.0001 {
+					count++
+					progress <- []byte(strconv.FormatFloat(100.0*p, 'f', 3, 32))
 				}
 			}
 		}
-		hw.Write(sector)
-		for _, iw := range dc.imageWriters {
-			if iw.Aborted() {
-				continue
-			}
-			_, err = iw.Write(sector)
-			if err != nil {
-				log.Error("failed to write in %s: %s", iw.file.Name(), err)
-				p := iw.file.Name()
-				// Stop writing to this writer - abort it.
-				if err = iw.Abort(); err != nil {
-					log.Warning("failed to fully abort image writer %s", p)
+	}(quit)
+
+	select {
+	case r := <-reports:
+		if r != nil {
+			bs, _ := json.MarshalIndent(r, "", "    ")
+			for _, iw := range cs.imageWriters {
+				if iw.Aborted() {
+					continue
 				}
+				// Create info file.
+				iif, err := os.Create(iw.file.Name() + ".info")
+				if err != nil {
+					log.Error("failed to create info file %s", err)
+					continue
+				}
+				iif.Write(bs)
+				iif.Close()
 			}
 		}
-		// Report progress in form XXX.YY%.
-		portion += lss
-		if p := float64(portion) / float64(dc.capacity); p >= count*0.001 {
-			count++
-			progress <- 100.0 * p
-		}
-	}
-	close(progress)
-	cr := &cloningReport{
-		StartTime: ts,
-		EndTime:   time.Now(),
-		DiskProfile: diskProfile{
-			dc.deviceType,
-			dc.serialNumber,
-			dc.physicalSectorSize,
-			dc.logicalSectorSize,
-			dc.capacity,
-		},
-		Hashes: hashes{
-			Sprintf("%x", md5h.Sum(nil)),
-			Sprintf("%x", sha1h.Sum(nil)),
-			Sprintf("%x", sha256h.Sum(nil)),
-			Sprintf("%x", sha512h.Sum(nil)),
-		},
-		UnreadLogicalSectors: unreadSectors,
-	}
-	bs, _ := json.MarshalIndent(cr, "", "    ")
-	for _, iw := range dc.imageWriters {
-		// Create info file.
-		iif, err := os.Create(iw.file.Name() + ".info")
-		if err != nil {
-			log.Error("failed to create info file %s", err)
-			continue
-		}
-		iif.Write(bs)
-		iif.Close()
+		return
 	}
 }
 
-func (dc *DiskCloner) Clone() {
-	done := make(chan struct{})
-	progress := make(chan float64)
+func (cs *CloningSession) Clone(quit chan os.Signal) {
+	var (
+		done     = make(chan struct{})
+		progress = make(chan []byte)
+	)
 	go func() {
 		defer func() {
 			done <- struct{}{}
 		}()
-		dc.clone(progress)
+		cs.clone(progress, quit)
 	}()
+	address := &net.UnixAddr{AppPath.Progress, "unix"}
 	for p := range progress {
-		dc.progressFile.WriteString(Sprintf("\r%.2f%%", p))
+		conn, err := net.DialUnix("unix", nil, address)
+		if err != nil {
+			log.Warning("failed to establish monitoring connection: %s", err)
+			continue
+		}
+		_, err = conn.Write(p)
+		if err != nil {
+			log.Info("Not sent: %s", p)
+		}
+		conn.Close()
 	}
 	<-done
+	return
 }

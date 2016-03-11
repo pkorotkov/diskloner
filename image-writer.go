@@ -11,7 +11,7 @@ type imageWriter struct {
 
 func newImageWriter(ip string, c int64) (*imageWriter, error) {
 	var err error
-	if err = createParentDirectories(ip); err != nil {
+	if err = createParentDirectoriesFor(FSEntity.File, ip); err != nil {
 		return nil, err
 	}
 	var file *os.File

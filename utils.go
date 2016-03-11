@@ -117,11 +117,24 @@ func isFileBlockDevice(f *os.File) (bool, error) {
 	return r != 0, nil
 }
 
-func createParentDirectories(path string) error {
-	d := filepath.Dir(path)
-	if err := os.MkdirAll(d, os.ModeDir); err != nil {
-		return err
+type fsEntity int
+
+var FSEntity struct {
+	File, Directory fsEntity
+} = struct {
+	File, Directory fsEntity
+}{1, 2}
+
+func createParentDirectoriesFor(fse fsEntity, path string) (err error) {
+	var d string
+	switch fse {
+	case FSEntity.File:
+		d = filepath.Dir(path)
+	case FSEntity.Directory:
+		d = path
 	}
-	// Set drwxr-xr-x permission mode.
-	return os.Chmod(d, os.FileMode(0755))
+	if err = os.MkdirAll(d, os.FileMode(0755)); err != nil {
+		return
+	}
+	return
 }
