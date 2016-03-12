@@ -21,6 +21,7 @@ import (
 
 type CloningSession struct {
 	name         string
+	uuid         string
 	diskProfile  diskProfile
 	disk         *os.File
 	imageWriters []*imageWriter
@@ -54,7 +55,7 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("failed to create directory for progress file: %s", err)
 		return
 	}
-	cs = &CloningSession{name, diskProfile{dt, sn, pss, lss, c}, disk, iws}
+	cs = &CloningSession{name, getUUID(), diskProfile{dt, sn, pss, lss, c}, disk, iws}
 	return
 }
 
@@ -95,7 +96,7 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 					if n == 0 {
 						reports <- &cloningReport{
 							SessionName: cs.name,
-							UUID:        getUUID(),
+							UUID:        cs.uuid,
 							StartTime:   ts,
 							EndTime:     time.Now(),
 							DiskProfile: cs.diskProfile,
@@ -130,7 +131,9 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 			portion += lss
 			if p := float64(portion) / float64(cs.diskProfile.Capacity); p >= count*0.0001 {
 				count++
-				progress <- &ProgressMessage{cs.name, 100.0 * p}
+				// TODO: Use sync.Pool.
+				// TODO: Take a progress message object from pool.
+				progress <- &ProgressMessage{cs.name, cs.uuid, int(count)}
 			}
 		}
 	}

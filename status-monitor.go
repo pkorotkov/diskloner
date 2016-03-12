@@ -6,12 +6,9 @@ import (
 	"os"
 
 	. "./internal"
-)
 
-type message struct {
-	sessionName string
-	body        []byte
-}
+	uip "github.com/gosuri/uiprogress"
+)
 
 func monitorStatus(quit chan os.Signal) {
 	l, err := net.ListenUnix("unix", &net.UnixAddr{AppPath.ProgressFile, "unix"})
@@ -21,6 +18,8 @@ func monitorStatus(quit chan os.Signal) {
 	}
 	defer os.Remove(AppPath.ProgressFile)
 	messages := make(chan *ProgressMessage)
+	sessions := make(map[string]*uip.Bar)
+	uip.Start()
 	for {
 		go func(m chan *ProgressMessage) {
 			var mp ProgressMessage
@@ -43,8 +42,17 @@ func monitorStatus(quit chan os.Signal) {
 		select {
 		case m := <-messages:
 			if m != nil {
-				// TODO: Change output format.
-				log.Info("message %v", m)
+				bar, ok := sessions[m.UUID]
+				if !ok {
+					sessions[m.UUID] = uip.AddBar(10000).AppendCompleted()
+					bar = sessions[m.UUID]
+					bar.PrependFunc(func(bar *uip.Bar) string {
+						return m.UUID[:9] + "..."
+					})
+				}
+				bar.Set(m.Count)
+				// TODO: Use sync.Pool.
+				// TODO: Put the progress message object back into pool.
 			}
 		case <-quit:
 			return

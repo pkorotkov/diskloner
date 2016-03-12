@@ -1,6 +1,7 @@
 package internal
 
 type ProgressMessage struct {
-	Name       string
-	Percentage float64
+	Name  string
+	UUID  string
+	Count int
 }
