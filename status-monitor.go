@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	. "fmt"
 	"net"
 	"os"
 
@@ -47,7 +48,7 @@ func monitorStatus(quit chan os.Signal) {
 					sessions[m.UUID] = uip.AddBar(10000).AppendCompleted()
 					bar = sessions[m.UUID]
 					bar.PrependFunc(func(bar *uip.Bar) string {
-						return m.UUID[:9] + "..."
+						return Sprintf("%s[%s...%s]", m.Name, m.UUID[0:6], m.UUID[32:36])
 					})
 				}
 				bar.Set(m.Count)
