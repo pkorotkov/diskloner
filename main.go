@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/signal"
 
+	. "./internal"
+
 	. "github.com/docopt/docopt-go"
 	"github.com/pkorotkov/logstick"
 	"github.com/pkorotkov/safe"
@@ -45,20 +47,20 @@ func main() {
 		monitorStatus(quit)
 	case args["clone"]:
 		// Don't allow go further if app isn't run under root.
-		if !isRoot() {
+		if !IsRoot() {
 			log.Error("application requires root privileges")
-			safe.Exit(2)
+			safe.Exit(1)
 		}
 		cs, err := NewCloningSession(args["--name"].(string), args["<disk-path>"].(string), args["<image-path>"].([]string))
 		if err != nil {
 			log.Error("failed to create cloner: %s", err)
-			safe.Exit(3)
+			safe.Exit(2)
 		}
 		defer cs.Close()
 		cs.Clone(quit)
 	default:
 		log.Error("invalid set of arguments")
-		safe.Exit(4)
+		safe.Exit(3)
 	}
 	safe.Exit(0)
 }

@@ -19,6 +19,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var (
+	diskFileMode  = os.FileMode(0400)
+	imageFileMode = os.FileMode(0600)
+)
+
 type CloningSession struct {
 	name         string
 	uuid         string
@@ -30,32 +35,32 @@ type CloningSession struct {
 func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningSession, err error) {
 	// Open disk to read.
 	var disk *os.File
-	if disk, err = os.OpenFile(diskPath, unix.O_RDONLY|unix.O_NONBLOCK, os.FileMode(0400)); err != nil {
+	if disk, err = os.OpenFile(diskPath, unix.O_RDONLY|unix.O_NONBLOCK, diskFileMode); err != nil {
 		return
 	}
 	var ok bool
-	if ok, err = isFileBlockDevice(disk); err != nil {
+	if ok, err = IsFileBlockDevice(disk); err != nil {
 		return
 	}
 	if !ok {
 		err = Errorf("given path does not point to block device")
 		return
 	}
-	dt, sn, pss, lss, c := getDiskProfile(disk)
+	dt, sn, pss, lss, c := GetDiskProfile(disk)
 	var iws []*imageWriter
 	for _, ip := range imagePaths {
-		iw, e := newImageWriter(ip, c)
+		iw, e := newImageWriter(ip, c, imageFileMode)
 		if e != nil {
 			err = Errorf("failed to allocate image file %s: %s", ip, e)
 			return
 		}
 		iws = append(iws, iw)
 	}
-	if err = createDirectoriesFor(FSEntity.File, AppPath.ProgressFile); err != nil {
+	if err = CreateDirectoriesFor(FSEntity.File, AppPath.ProgressFile); err != nil {
 		err = Errorf("failed to create directory for progress file: %s", err)
 		return
 	}
-	cs = &CloningSession{name, getUUID(), diskProfile{dt, sn, pss, lss, c}, disk, iws}
+	cs = &CloningSession{name, GetUUID(), diskProfile{dt, sn, pss, lss, c}, disk, iws}
 	return
 }
 
@@ -95,7 +100,7 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 					// This is the check of final call with (0, io.EOF) result.
 					if n == 0 {
 						reports <- &cloningReport{
-							SessionName: cs.name,
+							Name:        cs.name,
 							UUID:        cs.uuid,
 							StartTime:   ts,
 							EndTime:     time.Now(),

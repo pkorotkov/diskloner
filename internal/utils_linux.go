@@ -1,4 +1,4 @@
-package main
+package internal
 
 /*
 #include <linux/fs.h>
@@ -58,19 +58,15 @@ import "C"
 import (
 	"bytes"
 	. "fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
-	"path/filepath"
-
-	. "./internal"
 )
 
-func isProcessConnectedToTerminal() bool {
+func IsProcessConnectedToTerminal() bool {
 	return C.isatty(1) == 1
 }
 
-func isRoot() bool {
+func IsRoot() bool {
 	return C.geteuid() == 0
 }
 
@@ -82,7 +78,7 @@ func getRHSValue(bs []byte) string {
 	return string(bytes.TrimSpace(bytes.Split(bs, []byte{61})[1]))
 }
 
-func getDiskProfile(disk *os.File) (dt, sn string, pss, lss int32, c int64) {
+func GetDiskProfile(disk *os.File) (dt, sn string, pss, lss int32, c int64) {
 	var (
 		err error
 		out []byte
@@ -111,39 +107,11 @@ func getDiskProfile(disk *os.File) (dt, sn string, pss, lss int32, c int64) {
 	return
 }
 
-func isFileBlockDevice(f *os.File) (bool, error) {
+func IsFileBlockDevice(f *os.File) (bool, error) {
 	var ecode C.int
 	r := C.is_file_block_device(C.int(f.Fd()), &ecode)
 	if ecode != 0 {
 		return false, Errorf("failed to check file type")
 	}
 	return r != 0, nil
-}
-
-type fsEntity int
-
-var FSEntity struct {
-	File, Directory fsEntity
-} = struct {
-	File, Directory fsEntity
-}{1, 2}
-
-func createDirectoriesFor(fse fsEntity, path string) (err error) {
-	var d string
-	switch fse {
-	case FSEntity.File:
-		d = filepath.Dir(path)
-	case FSEntity.Directory:
-		d = path
-	}
-	if err = os.MkdirAll(d, os.FileMode(0755)); err != nil {
-		return
-	}
-	return
-}
-
-// getUUID generates a random UUID according to RFC 4122.
-func getUUID() string {
-	uuid, _ := ioutil.ReadFile(AppPath.UUIDFile)
-	return string(bytes.TrimSpace(uuid))
 }

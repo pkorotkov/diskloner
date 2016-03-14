@@ -18,7 +18,7 @@ type hashes struct {
 }
 
 type cloningReport struct {
-	SessionName          string      `json:"session_name"`
+	Name                 string      `json:"name"`
 	UUID                 string      `json:"uuid"`
 	StartTime            time.Time   `json:"start_time"`
 	EndTime              time.Time   `json:"end_time"`

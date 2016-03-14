@@ -2,6 +2,8 @@ package main
 
 import (
 	"os"
+
+	. "./internal"
 )
 
 type imageWriter struct {
@@ -9,13 +11,13 @@ type imageWriter struct {
 	file    *os.File
 }
 
-func newImageWriter(ip string, c int64) (*imageWriter, error) {
+func newImageWriter(ip string, c int64, m os.FileMode) (*imageWriter, error) {
 	var err error
-	if err = createDirectoriesFor(FSEntity.File, ip); err != nil {
+	if err = CreateDirectoriesFor(FSEntity.File, ip); err != nil {
 		return nil, err
 	}
 	var file *os.File
-	if file, err = os.OpenFile(ip, os.O_WRONLY|os.O_CREATE, os.FileMode(0600)); err != nil {
+	if file, err = os.OpenFile(ip, os.O_WRONLY|os.O_CREATE, m); err != nil {
 		return nil, err
 	}
 	if err = file.Truncate(c); err != nil {
