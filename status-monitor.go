@@ -45,10 +45,11 @@ func monitorStatus(quit chan os.Signal) {
 			if m != nil {
 				bar, ok := sessions[m.UUID]
 				if !ok {
-					sessions[m.UUID] = uip.AddBar(10000).AppendCompleted()
+					sessions[m.UUID] = uip.AddBar(10000)
 					bar = sessions[m.UUID]
-					bar.PrependFunc(func(bar *uip.Bar) string {
-						return Sprintf("%s[%s...%s]", m.Name, m.UUID[0:6], m.UUID[32:36])
+					bar.AppendCompleted()
+					bar.PrependFunc(func(b *uip.Bar) string {
+						return Sprintf("%s (%s...%s)", m.Name, m.UUID[0:6], m.UUID[32:36])
 					})
 				}
 				bar.Set(m.Count)

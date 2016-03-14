@@ -78,7 +78,7 @@ func getRHSValue(bs []byte) string {
 	return string(bytes.TrimSpace(bytes.Split(bs, []byte{61})[1]))
 }
 
-func GetDiskProfile(disk *os.File) (dt, sn string, pss, lss int32, c int64) {
+func GetDiskProfile(disk *os.File) (dt, sn string, pss, lss int, c int64) {
 	var (
 		err error
 		out []byte
@@ -101,8 +101,8 @@ func GetDiskProfile(disk *os.File) (dt, sn string, pss, lss int32, c int64) {
 		}
 	}
 	fd := C.int(disk.Fd())
-	pss = int32(C.get_disk_physical_sector_size(fd))
-	lss = int32(C.get_disk_logical_sector_size(fd))
+	pss = int(C.get_disk_physical_sector_size(fd))
+	lss = int(C.get_disk_logical_sector_size(fd))
 	c = int64(C.get_disk_capacity_in_bytes(fd))
 	return
 }

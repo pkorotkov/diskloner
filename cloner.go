@@ -73,9 +73,8 @@ func (cs *CloningSession) Close() error {
 
 func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports chan *cloningReport, quit chan os.Signal) {
 	defer close(progress)
-	lss := int(cs.diskProfile.LogicalSectorSize)
-	sector := make([]byte, lss)
-	zeroSector := make([]byte, lss, lss)
+	sector := make([]byte, cs.diskProfile.LogicalSectorSize)
+	zeroSector := make([]byte, cs.diskProfile.LogicalSectorSize, cs.diskProfile.LogicalSectorSize)
 	count, portion := 1.0, 0
 	md5h, sha1h, sha256h, sha512h := md5.New(), sha1.New(), sha256.New(), sha512.New()
 	hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h)
@@ -93,9 +92,9 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 				if err != io.EOF {
 					log.Warning("detected unreadable sector at offset %d", cp)
 					unreadSectors = append(unreadSectors, cp)
-					sector, n = zeroSector, lss
+					sector, n = zeroSector, cs.diskProfile.LogicalSectorSize
 					// Jump to the next sector.
-					cs.disk.Seek(int64(lss), 1)
+					cs.disk.Seek(int64(cs.diskProfile.LogicalSectorSize), 1)
 				} else {
 					// This is the check of final call with (0, io.EOF) result.
 					if n == 0 {
@@ -133,12 +132,18 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 				}
 			}
 			// Report progress.
-			portion += lss
+			portion += cs.diskProfile.LogicalSectorSize
 			if p := float64(portion) / float64(cs.diskProfile.Capacity); p >= count*0.0001 {
 				count++
 				// TODO: Use sync.Pool.
 				// TODO: Take a progress message object from pool.
-				progress <- &ProgressMessage{cs.name, cs.uuid, int(count)}
+				progress <- &ProgressMessage{
+					cs.name,
+					cs.uuid,
+					int64(portion),
+					cs.diskProfile.Capacity,
+					int(count),
+				}
 			}
 		}
 	}
