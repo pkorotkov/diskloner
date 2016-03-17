@@ -30,6 +30,19 @@ func CreateDirectoriesFor(fse fsEntity, path string) (err error) {
 	return
 }
 
+func GetUnixDomainSocketsInDirectory(dp string) (ss []string, err error) {
+	var fis []os.FileInfo
+	if fis, err = ioutil.ReadDir(dp); err != nil {
+		return
+	}
+	for _, fi := range fis {
+		if fi.Mode()&os.ModeSocket != 0 {
+			ss = append(ss, fi.Name())
+		}
+	}
+	return
+}
+
 // GetUUID generates a random UUID according to RFC 4122.
 func GetUUID() string {
 	uuid, _ := ioutil.ReadFile(AppPath.UUIDFile)

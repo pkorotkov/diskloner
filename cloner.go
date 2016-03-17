@@ -142,7 +142,7 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 					cs.uuid,
 					int64(portion),
 					cs.diskProfile.Capacity,
-					int(count),
+					int64(count) - 1,
 				}
 			}
 		}

@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var version = "0.1.1"
+var version = "0.2.0"
 
 var usage = `diskloner is a console app for cloning disks and partitions.
 

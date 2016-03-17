@@ -7,8 +7,6 @@ import (
 	"os"
 
 	. "./internal"
-
-	uip "github.com/gosuri/uiprogress"
 )
 
 func monitorStatus(quit chan os.Signal) {
@@ -19,8 +17,9 @@ func monitorStatus(quit chan os.Signal) {
 	}
 	defer os.Remove(AppPath.ProgressFile)
 	messages := make(chan *ProgressMessage)
-	sessions := make(map[string]*uip.Bar)
-	uip.Start()
+	sessions := make(map[string]int)
+	p := NewProgress()
+	defer p.Close()
 	for {
 		go func(m chan *ProgressMessage) {
 			var mp ProgressMessage
@@ -43,16 +42,11 @@ func monitorStatus(quit chan os.Signal) {
 		select {
 		case m := <-messages:
 			if m != nil {
-				bar, ok := sessions[m.UUID]
+				_, ok := sessions[m.UUID]
 				if !ok {
-					sessions[m.UUID] = uip.AddBar(10000)
-					bar = sessions[m.UUID]
-					bar.AppendCompleted()
-					bar.PrependFunc(func(b *uip.Bar) string {
-						return Sprintf("%s (%s...%s)", m.Name, m.UUID[0:6], m.UUID[32:36])
-					})
+					sessions[m.UUID] = p.AddBar("CLONING", m.Name, Sprintf("%s...%s", m.UUID[0:6], m.UUID[32:36]), 10000)
 				}
-				bar.Set(m.Count)
+				p.UpdateBar(BarUpdate{sessions[m.UUID], m.Count})
 				// TODO: Use sync.Pool.
 				// TODO: Put the progress message object back into pool.
 			}
