@@ -19,6 +19,7 @@ var usage = `diskloner is a console app for cloning disks and partitions.
 Usage:
   diskloner status
   diskloner clone [-n <hfn> | --name <hfn>] <disk-path> <image-path>...
+  diskloner inquire <disk-path> <info-path>...
   diskloner -h | --help
   diskloner -v | --version
 
@@ -58,6 +59,8 @@ func main() {
 		}
 		defer cs.Close()
 		cs.Clone(quit)
+	case args["inquire"]:
+		// TODO: Implement it.
 	default:
 		log.Error("invalid set of arguments")
 		safe.Exit(3)
