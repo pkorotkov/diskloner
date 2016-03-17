@@ -24,7 +24,7 @@ Usage:
   diskloner -v | --version
 
 Options:
-  -n <hfn>, --name <hfn>  Human friendly name of cloning session [default: UNNAMED].
+  -n <hfn>, --name <hfn>  Human friendly name of cloning session [default: -].
   -h, --help              Show this message.
   -v, --version           Show version.`
 

@@ -5,9 +5,16 @@ import (
 	. "fmt"
 	"net"
 	"os"
+	"sync"
 
 	. "./internal"
 )
+
+var lineWithSIDAndStateUpdatePool = sync.Pool{
+	New: func() interface{} {
+		return &LineWithSIDAndStateUpdate{}
+	},
+}
 
 func monitorStatus(quit chan os.Signal) {
 	l, err := net.ListenUnix("unix", &net.UnixAddr{AppPath.ProgressFile, "unix"})
@@ -45,9 +52,12 @@ func monitorStatus(quit chan os.Signal) {
 				_, ok := sessions[m.UUID]
 				if !ok {
 					sid := Sprintf("%s...%s", m.UUID[0:6], m.UUID[32:36])
-					sessions[m.UUID] = p.AddBar("CLONING", m.Name, sid, m.TotalBytes)
+					sessions[m.UUID] = p.AddLine(NewLineWithSIDAndState(sid, m.State, m.TotalBytes))
 				}
-				p.UpdateBar(BarUpdate{sessions[m.UUID], m.CopiedBytes})
+				l := lineWithSIDAndStateUpdatePool.Get().(*LineWithSIDAndStateUpdate)
+				l.Id, l.State, l.Current = sessions[m.UUID], m.State, m.CopiedBytes
+				p.UpdateLine(l)
+				lineWithSIDAndStateUpdatePool.Put(l)
 				// TODO: Use sync.Pool.
 				// TODO: Put the progress message object back into pool.
 			}

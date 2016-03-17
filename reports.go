@@ -4,6 +4,7 @@ import "time"
 
 type diskProfile struct {
 	Type               string `json:"type"`
+	PartitionTableType string `json:"partition_table_type"`
 	SerialNumber       string `json:"serial_number"`
 	PhysicalSectorSize int    `json:"physical_sector_size"`
 	LogicalSectorSize  int    `json:"logical_sector_size"`

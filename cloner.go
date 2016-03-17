@@ -46,7 +46,7 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("given path does not point to block device")
 		return
 	}
-	dt, sn, pss, lss, c := GetDiskProfile(disk)
+	dt, ptt, sn, pss, lss, c := GetDiskProfile(disk)
 	var iws []*imageWriter
 	for _, ip := range imagePaths {
 		iw, e := newImageWriter(ip, c, imageFileMode)
@@ -60,7 +60,7 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("failed to create directory for progress file: %s", err)
 		return
 	}
-	cs = &CloningSession{name, GetUUID(), diskProfile{dt, sn, pss, lss, c}, disk, iws}
+	cs = &CloningSession{name, GetUUID(), diskProfile{dt, ptt, sn, pss, lss, c}, disk, iws}
 	return
 }
 
@@ -73,13 +73,17 @@ func (cs *CloningSession) Close() error {
 
 func (cs *CloningSession) copySectors(progress chan *ProgressMessage, reports chan *cloningReport, quit chan os.Signal) {
 	defer close(progress)
-	sector := make([]byte, cs.diskProfile.LogicalSectorSize)
-	zeroSector := make([]byte, cs.diskProfile.LogicalSectorSize, cs.diskProfile.LogicalSectorSize)
-	count, portion := 1.0, 0
 	md5h, sha1h, sha256h, sha512h := md5.New(), sha1.New(), sha256.New(), sha512.New()
 	hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h)
-	var unreadSectors []int64
-	ts := time.Now()
+	var (
+		unreadSectors []int64
+		ps            string
+		count         = 1.0
+		portion       = int64(0)
+		sector        = make([]byte, cs.diskProfile.LogicalSectorSize)
+		zeroSector    = make([]byte, cs.diskProfile.LogicalSectorSize, cs.diskProfile.LogicalSectorSize)
+		ts            = time.Now()
+	)
 	for {
 		select {
 		case <-quit:
@@ -132,12 +136,18 @@ func (cs *CloningSession) copySectors(progress chan *ProgressMessage, reports ch
 				}
 			}
 			// Report progress.
-			portion += cs.diskProfile.LogicalSectorSize
+			portion += int64(cs.diskProfile.LogicalSectorSize)
 			if p := float64(portion) / float64(cs.diskProfile.Capacity); p >= count*0.0001 {
 				count++
+				if portion == cs.diskProfile.Capacity {
+					ps = ProgressState.Completed
+				} else {
+					ps = ProgressState.Cloning
+				}
 				// TODO: Use sync.Pool.
 				// TODO: Take a progress message object from pool.
 				progress <- &ProgressMessage{
+					ps,
 					cs.name,
 					cs.uuid,
 					int64(portion),

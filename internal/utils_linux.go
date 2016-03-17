@@ -78,12 +78,12 @@ func getRHSValue(bs []byte) string {
 	return string(bytes.TrimSpace(bytes.Split(bs, []byte{61})[1]))
 }
 
-func GetDiskProfile(disk *os.File) (dt, sn string, pss, lss int, c int64) {
+func GetDiskProfile(disk *os.File) (dt, ptt, sn string, pss, lss int, c int64) {
 	var (
 		err error
 		out []byte
 	)
-	dt, sn = "???", "???"
+	dt, ptt, sn = "???", "???", "???"
 	out, err = executeShellCommand(Sprintf("udevadm info --query=property %s", disk.Name()))
 	if err != nil {
 		return
@@ -93,6 +93,10 @@ func GetDiskProfile(disk *os.File) (dt, sn string, pss, lss int, c int64) {
 		case bytes.Contains(line, []byte("ID_SERIAL_SHORT=")):
 			if lsn := getRHSValue(line); len(lsn) != 0 {
 				sn = lsn
+			}
+		case bytes.Contains(line, []byte("ID_PART_TABLE_TYPE=")):
+			if lptt := getRHSValue(line); len(lptt) != 0 {
+				ptt = lptt
 			}
 		case bytes.Contains(line, []byte("DEVTYPE=")):
 			if ldt := getRHSValue(line); len(ldt) != 0 {

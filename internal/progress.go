@@ -8,15 +8,13 @@ import (
 	"sync"
 )
 
-type bar struct {
-	Name1, Name2, Name3 string
-	Current, Total      int64
-	Ratio               float64
+type LineUpdate interface {
+	ID() int
 }
 
-type BarUpdate struct {
-	ID      int
-	Current int64
+type Line interface {
+	Update(update LineUpdate)
+	String() string
 }
 
 type Progress struct {
@@ -27,7 +25,7 @@ type Progress struct {
 	name1MaxLenght int
 	name2MaxLenght int
 	name3MaxLenght int
-	bars           map[int]*bar
+	lines          map[int]Line
 	updates        chan struct{}
 	done           chan struct{}
 }
@@ -35,11 +33,11 @@ type Progress struct {
 func NewProgress() *Progress {
 	p := &Progress{
 		out:     os.Stdout,
-		bars:    make(map[int]*bar),
+		lines:   make(map[int]Line),
 		updates: make(chan struct{}),
 		done:    make(chan struct{}),
 	}
-	go p.display()
+	go p.displayLines()
 	return p
 }
 
@@ -51,50 +49,32 @@ func (p *Progress) Close() error {
 	return nil
 }
 
-func (p *Progress) AddBar(name1, name2, name3 string, total int64) int {
+func (p *Progress) AddLine(line Line) int {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.index++
-	p.bars[p.index] = &bar{name1, name2, name3, 0, total, 0.0}
-	var l int
-	if l = len(name1); p.name1MaxLenght < l {
-		p.name1MaxLenght = l
-	}
-	if l = len(name2); p.name2MaxLenght < l {
-		p.name2MaxLenght = l
-	}
-	if l = len(name3); p.name3MaxLenght < l {
-		p.name3MaxLenght = l
-	}
+	p.lines[p.index] = line
 	return p.index
 }
 
-func (p *Progress) HasBar(bid int) bool {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	_, ok := p.bars[bid]
-	return ok
-}
-
-func (p *Progress) updateBar(bu BarUpdate) {
-	p.bars[bu.ID].Current = bu.Current
-	p.bars[bu.ID].Ratio = float64(bu.Current) / float64(p.bars[bu.ID].Total) * 100
+func (p *Progress) updateLine(lu LineUpdate) {
+	p.lines[lu.ID()].Update(lu)
 	p.updates <- struct{}{}
 	return
 }
 
-func (p *Progress) UpdateBar(bu BarUpdate) {
+func (p *Progress) UpdateLine(lu LineUpdate) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	p.updateBar(bu)
+	p.updateLine(lu)
 	return
 }
 
-func (p *Progress) UpdateBars(bus ...BarUpdate) {
+func (p *Progress) UpdateLines(lus ...LineUpdate) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	for _, bu := range bus {
-		p.updateBar(bu)
+	for _, lu := range lus {
+		p.updateLine(lu)
 	}
 	return
 }
@@ -112,32 +92,31 @@ func newlines(l int) (ns string) {
 
 func (p *Progress) arrangedIndices() []int {
 	var inds []int
-	for ind := range p.bars {
+	for ind := range p.lines {
 		inds = append(inds, ind)
 	}
 	sort.Ints(inds)
 	return inds
 }
 
-func (p *Progress) display() {
-	// Send first state update signal just to display bars.
+func (p *Progress) displayLines() {
+	// Send first state update signal just to display lines.
 	go func() {
 		p.updates <- struct{}{}
 	}()
-	var nbars int
+	var nls int
 	for range p.updates {
-		nbars = len(p.bars)
-		if nbars == 0 {
+		nls = len(p.lines)
+		if nls == 0 {
 			continue
 		}
 		var s string
-		fs := fmt.Sprintf("[%%%ds][%%%ds]{%%%ds}: %%.2f%%%% (%%d / %%d)\n", p.name1MaxLenght, p.name2MaxLenght, p.name3MaxLenght)
 		for _, ind := range p.arrangedIndices() {
-			s += fmt.Sprintf(fs, p.bars[ind].Name1, p.bars[ind].Name2, p.bars[ind].Name3, p.bars[ind].Ratio, p.bars[ind].Current, p.bars[ind].Total)
+			s += p.lines[ind].String() + "\n"
 		}
 		p.writeString(s)
-		p.writeString(fmt.Sprintf("\033[%dA", nbars))
+		p.writeString(fmt.Sprintf("\033[%dA", nls))
 	}
-	p.writeString(newlines(nbars))
+	p.writeString(newlines(nls))
 	p.done <- struct{}{}
 }
