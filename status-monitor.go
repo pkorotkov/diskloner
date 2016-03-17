@@ -17,6 +17,7 @@ var lineWithSIDAndStateUpdatePool = sync.Pool{
 }
 
 func monitorStatus(quit chan os.Signal) {
+	// TODO: Make this for multiple monitors.
 	l, err := net.ListenUnix("unix", &net.UnixAddr{AppPath.ProgressFile, "unix"})
 	if err != nil {
 		log.Error("failed to establish monitoring connection: %s", err)

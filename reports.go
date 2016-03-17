@@ -6,6 +6,7 @@ type diskProfile struct {
 	Type               string `json:"type"`
 	PartitionTableType string `json:"partition_table_type"`
 	SerialNumber       string `json:"serial_number"`
+	Model              string `json:"model"`
 	PhysicalSectorSize int    `json:"physical_sector_size"`
 	LogicalSectorSize  int    `json:"logical_sector_size"`
 	Capacity           int64  `json:"capacity"`

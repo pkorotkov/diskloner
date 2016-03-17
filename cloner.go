@@ -46,7 +46,7 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("given path does not point to block device")
 		return
 	}
-	dt, ptt, sn, pss, lss, c := GetDiskProfile(disk)
+	dt, ptt, sn, m, pss, lss, c := GetDiskProfile(disk)
 	var iws []*imageWriter
 	for _, ip := range imagePaths {
 		iw, e := newImageWriter(ip, c, imageFileMode)
@@ -60,7 +60,7 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("failed to create directory for progress file: %s", err)
 		return
 	}
-	cs = &CloningSession{name, GetUUID(), diskProfile{dt, ptt, sn, pss, lss, c}, disk, iws}
+	cs = &CloningSession{name, GetUUID(), diskProfile{dt, ptt, sn, m, pss, lss, c}, disk, iws}
 	return
 }
 
