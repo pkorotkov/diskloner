@@ -71,7 +71,7 @@ func (cs *CloningSession) Close() error {
 	return cs.disk.Close()
 }
 
-func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports chan *cloningReport, quit chan os.Signal) {
+func (cs *CloningSession) copySectors(progress chan *ProgressMessage, reports chan *cloningReport, quit chan os.Signal) {
 	defer close(progress)
 	sector := make([]byte, cs.diskProfile.LogicalSectorSize)
 	zeroSector := make([]byte, cs.diskProfile.LogicalSectorSize, cs.diskProfile.LogicalSectorSize)
@@ -142,7 +142,6 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 					cs.uuid,
 					int64(portion),
 					cs.diskProfile.Capacity,
-					int64(count) - 1,
 				}
 			}
 		}
@@ -151,8 +150,8 @@ func (cs *CloningSession) readSectors(progress chan *ProgressMessage, reports ch
 
 func (cs *CloningSession) clone(progress chan *ProgressMessage, quit chan os.Signal) {
 	reports := make(chan *cloningReport)
-	go cs.readSectors(progress, reports, quit)
-	// Wait for readSectors signals to reports (value - when completed successfully, nil - otherwise).
+	go cs.copySectors(progress, reports, quit)
+	// Wait for copySectors signals to reports (value - when completed successfully, nil - otherwise).
 	r := <-reports
 	if r != nil {
 		bs, _ := json.MarshalIndent(r, "", "    ")
@@ -160,8 +159,8 @@ func (cs *CloningSession) clone(progress chan *ProgressMessage, quit chan os.Sig
 			if iw.Aborted() {
 				continue
 			}
-			// Create info file.
-			iif, err := os.Create(iw.file.Name() + ".info")
+			// Create report file.
+			iif, err := os.Create(iw.file.Name() + ".report")
 			if err != nil {
 				log.Error("failed to create info file %s", err)
 				continue

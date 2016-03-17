@@ -44,9 +44,10 @@ func monitorStatus(quit chan os.Signal) {
 			if m != nil {
 				_, ok := sessions[m.UUID]
 				if !ok {
-					sessions[m.UUID] = p.AddBar("CLONING", m.Name, Sprintf("%s...%s", m.UUID[0:6], m.UUID[32:36]), 10000)
+					sid := Sprintf("%s...%s", m.UUID[0:6], m.UUID[32:36])
+					sessions[m.UUID] = p.AddBar("CLONING", m.Name, sid, m.TotalBytes)
 				}
-				p.UpdateBar(BarUpdate{sessions[m.UUID], m.Count})
+				p.UpdateBar(BarUpdate{sessions[m.UUID], m.CopiedBytes})
 				// TODO: Use sync.Pool.
 				// TODO: Put the progress message object back into pool.
 			}

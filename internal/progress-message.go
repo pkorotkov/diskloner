@@ -5,5 +5,4 @@ type ProgressMessage struct {
 	UUID        string
 	CopiedBytes int64
 	TotalBytes  int64
-	Count       int64
 }
