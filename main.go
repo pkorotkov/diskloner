@@ -58,12 +58,16 @@ func main() {
 			safe.Exit(2)
 		}
 		defer cs.Close()
-		cs.Clone(quit)
+		err = cs.Clone(quit)
+		if err != nil {
+			log.Error("failed to perform cloning: %s", err)
+			safe.Exit(3)
+		}
 	case args["inquire"]:
 		// TODO: Implement it.
 	default:
 		log.Error("invalid set of arguments")
-		safe.Exit(3)
+		safe.Exit(4)
 	}
 	safe.Exit(0)
 }

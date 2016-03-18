@@ -5,8 +5,8 @@ import "time"
 type diskProfile struct {
 	Type               string `json:"type"`
 	PartitionTableType string `json:"partition_table_type"`
-	SerialNumber       string `json:"serial_number"`
 	Model              string `json:"model"`
+	SerialNumber       string `json:"serial_number"`
 	PhysicalSectorSize int    `json:"physical_sector_size"`
 	LogicalSectorSize  int    `json:"logical_sector_size"`
 	Capacity           int64  `json:"capacity"`
@@ -19,7 +19,7 @@ type hashes struct {
 	SHA512Hash string `json:"sha512"`
 }
 
-type cloningReport struct {
+type CloningReport struct {
 	Name                 string      `json:"name"`
 	UUID                 string      `json:"uuid"`
 	StartTime            time.Time   `json:"start_time"`

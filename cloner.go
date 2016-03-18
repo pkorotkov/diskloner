@@ -29,7 +29,7 @@ type CloningSession struct {
 	uuid         string
 	diskProfile  diskProfile
 	disk         *os.File
-	imageWriters []*imageWriter
+	imageWriters *imageWriters
 }
 
 func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningSession, err error) {
@@ -46,38 +46,34 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("given path does not point to block device")
 		return
 	}
-	dt, ptt, sn, m, pss, lss, c := GetDiskProfile(disk)
-	var iws []*imageWriter
+	// TODO: Wrap with diskProfile structure.
+	dt, ptt, m, sn, pss, lss, c := GetDiskProfile(disk)
+	iws := newImageWriters(imageFileMode)
 	for _, ip := range imagePaths {
-		iw, e := newImageWriter(ip, c, imageFileMode)
-		if e != nil {
-			err = Errorf("failed to allocate image file %s: %s", ip, e)
+		if err = iws.AddImageWriter(ip, c); err != nil {
 			return
 		}
-		iws = append(iws, iw)
 	}
+	// TODO: Rework it to creating folder and move to the global app init function.
 	if err = CreateDirectoriesFor(FSEntity.File, AppPath.ProgressFile); err != nil {
 		err = Errorf("failed to create directory for progress file: %s", err)
 		return
 	}
-	cs = &CloningSession{name, GetUUID(), diskProfile{dt, ptt, sn, m, pss, lss, c}, disk, iws}
+	cs = &CloningSession{name, GetUUID(), diskProfile{dt, ptt, m, sn, pss, lss, c}, disk, iws}
 	return
 }
 
 func (cs *CloningSession) Close() error {
-	for _, iw := range cs.imageWriters {
-		iw.Close()
-	}
+	cs.imageWriters.Close()
 	return cs.disk.Close()
 }
 
-func (cs *CloningSession) copySectors(progress chan *ProgressMessage, reports chan *cloningReport, quit chan os.Signal) {
+func (cs *CloningSession) copySectors(progress chan *CloningMessage, reports chan *CloningReport, quit chan os.Signal) {
 	defer close(progress)
 	md5h, sha1h, sha256h, sha512h := md5.New(), sha1.New(), sha256.New(), sha512.New()
-	hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h)
+	hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h, cs.imageWriters)
 	var (
 		unreadSectors []int64
-		ps            string
 		count         = 1.0
 		portion       = int64(0)
 		sector        = make([]byte, cs.diskProfile.LogicalSectorSize)
@@ -102,7 +98,7 @@ func (cs *CloningSession) copySectors(progress chan *ProgressMessage, reports ch
 				} else {
 					// This is the check of final call with (0, io.EOF) result.
 					if n == 0 {
-						reports <- &cloningReport{
+						reports <- &CloningReport{
 							Name:        cs.name,
 							UUID:        cs.uuid,
 							StartTime:   ts,
@@ -116,38 +112,26 @@ func (cs *CloningSession) copySectors(progress chan *ProgressMessage, reports ch
 							},
 							UnreadLogicalSectors: unreadSectors,
 						}
+						// TODO: Send completed message.
+						// progress <- &CompletedMessage{cs.uuid}
 						return
 					}
 				}
 			}
-			hw.Write(sector)
-			for _, iw := range cs.imageWriters {
-				if iw.Aborted() {
-					continue
-				}
-				_, err = iw.Write(sector)
-				if err != nil {
-					log.Error("failed to write in %s: %s", iw.file.Name(), err)
-					fp := iw.file.Name()
-					// Stop writing to this writer - abort it.
-					if err = iw.Abort(); err != nil {
-						log.Warning("failed to fully abort image writer %s", fp)
-					}
-				}
+			// Write sector to underlying writers.
+			// It discontinues in case of any writing error
+			// with destroying all image files.
+			if _, err = hw.Write(sector); err != nil {
+				reports <- nil
+				// TODO: Send error message.
+				// progress <- &AbortedMessage{cs.uuid}
+				return
 			}
 			// Report progress.
 			portion += int64(cs.diskProfile.LogicalSectorSize)
 			if p := float64(portion) / float64(cs.diskProfile.Capacity); p >= count*0.0001 {
 				count++
-				if portion == cs.diskProfile.Capacity {
-					ps = ProgressState.Completed
-				} else {
-					ps = ProgressState.Cloning
-				}
-				// TODO: Use sync.Pool.
-				// TODO: Take a progress message object from pool.
-				progress <- &ProgressMessage{
-					ps,
+				progress <- &CloningMessage{
 					cs.name,
 					cs.uuid,
 					int64(portion),
@@ -158,39 +142,24 @@ func (cs *CloningSession) copySectors(progress chan *ProgressMessage, reports ch
 	}
 }
 
-func (cs *CloningSession) clone(progress chan *ProgressMessage, quit chan os.Signal) {
-	reports := make(chan *cloningReport)
+func (cs *CloningSession) clone(progress chan *CloningMessage, quit chan os.Signal) error {
+	reports := make(chan *CloningReport)
 	go cs.copySectors(progress, reports, quit)
 	// Wait for copySectors signals to reports (value - when completed successfully, nil - otherwise).
-	r := <-reports
-	if r != nil {
-		bs, _ := json.MarshalIndent(r, "", "    ")
-		for _, iw := range cs.imageWriters {
-			if iw.Aborted() {
-				continue
-			}
-			// Create report file.
-			iif, err := os.Create(iw.file.Name() + ".report")
-			if err != nil {
-				log.Error("failed to create info file %s", err)
-				continue
-			}
-			iif.Write(bs)
-			iif.Close()
-		}
+	if r := <-reports; r != nil {
+		rbs, _ := json.MarshalIndent(r, "", "    ")
+		cs.imageWriters.DumpReports(rbs)
 	}
+	return nil
 }
 
-func (cs *CloningSession) Clone(quit chan os.Signal) {
+func (cs *CloningSession) Clone(quit chan os.Signal) error {
 	var (
-		done     = make(chan struct{})
-		progress = make(chan *ProgressMessage)
+		done     = make(chan error)
+		progress = make(chan *CloningMessage)
 	)
 	go func() {
-		defer func() {
-			done <- struct{}{}
-		}()
-		cs.clone(progress, quit)
+		done <- cs.clone(progress, quit)
 	}()
 	address := &net.UnixAddr{AppPath.ProgressFile, "unix"}
 	for pm := range progress {
@@ -209,6 +178,5 @@ func (cs *CloningSession) Clone(quit chan os.Signal) {
 		conn.Close()
 	}
 	// Wait until clone function signals its completetion.
-	<-done
-	return
+	return <-done
 }

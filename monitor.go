@@ -24,13 +24,13 @@ func monitorStatus(quit chan os.Signal) {
 		return
 	}
 	defer os.Remove(AppPath.ProgressFile)
-	messages := make(chan *ProgressMessage)
+	messages := make(chan *CloningMessage)
 	sessions := make(map[string]int)
 	p := NewProgress()
 	defer p.Close()
 	for {
-		go func(m chan *ProgressMessage) {
-			var mp ProgressMessage
+		go func(m chan *CloningMessage) {
+			var mp CloningMessage
 			conn, err := l.AcceptUnix()
 			if err != nil {
 				log.Error("got accept error: %s", err)
@@ -53,14 +53,12 @@ func monitorStatus(quit chan os.Signal) {
 				_, ok := sessions[m.UUID]
 				if !ok {
 					sid := Sprintf("%s...%s", m.UUID[0:6], m.UUID[32:36])
-					sessions[m.UUID] = p.AddLine(NewLineWithSIDAndState(sid, m.State, m.TotalBytes))
+					sessions[m.UUID] = p.AddLine(NewLineWithSIDAndState(sid, "TODO", m.TotalBytes))
 				}
 				l := lineWithSIDAndStateUpdatePool.Get().(*LineWithSIDAndStateUpdate)
-				l.Id, l.State, l.Current = sessions[m.UUID], m.State, m.CopiedBytes
+				l.Id, l.State, l.Current = sessions[m.UUID], "TODO", m.CopiedBytes
 				p.UpdateLine(l)
 				lineWithSIDAndStateUpdatePool.Put(l)
-				// TODO: Use sync.Pool.
-				// TODO: Put the progress message object back into pool.
 			}
 		case <-quit:
 			return
