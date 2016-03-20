@@ -27,6 +27,7 @@ var (
 type CloningSession struct {
 	name         string
 	uuid         string
+	bdType       string
 	diskProfile  diskProfile
 	disk         *os.File
 	imageWriters *imageWriters
@@ -46,7 +47,6 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("given path does not point to block device")
 		return
 	}
-	// TODO: Rename to GetDiskInfo.
 	dt, ptt, m, sn, pss, lss, c := GetDiskInfo(disk)
 	iws := newImageWriters(imageFileMode)
 	for _, ip := range imagePaths {
@@ -59,7 +59,7 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("failed to create directory for progress file: %s", err)
 		return
 	}
-	cs = &CloningSession{name, GetUUID(), diskProfile{dt, ptt, m, sn, pss, lss, c}, disk, iws}
+	cs = &CloningSession{name, GetUUID(), dt, diskProfile{ptt, m, sn, pss, lss, c}, disk, iws}
 	return
 }
 
@@ -100,11 +100,12 @@ func (cs *CloningSession) copySectors(progress chan Message, reports chan *Cloni
 					// This is the check of final call with (0, io.EOF) result.
 					if n == 0 {
 						reports <- &CloningReport{
-							Name:        cs.name,
-							UUID:        cs.uuid,
-							StartTime:   ts,
-							EndTime:     time.Now(),
-							DiskProfile: cs.diskProfile,
+							Name:            cs.name,
+							UUID:            cs.uuid,
+							StartTime:       ts,
+							EndTime:         time.Now(),
+							BlockDeviceType: cs.bdType,
+							DiskProfile:     cs.diskProfile,
 							Hashes: hashes{
 								Sprintf("%x", md5h.Sum(nil)),
 								Sprintf("%x", sha1h.Sum(nil)),

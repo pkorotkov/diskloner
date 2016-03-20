@@ -3,7 +3,6 @@ package main
 import "time"
 
 type diskProfile struct {
-	Type               string `json:"type"`
 	PartitionTableType string `json:"partition_table_type"`
 	Model              string `json:"model"`
 	SerialNumber       string `json:"serial_number"`
@@ -24,6 +23,7 @@ type CloningReport struct {
 	UUID                 string      `json:"uuid"`
 	StartTime            time.Time   `json:"start_time"`
 	EndTime              time.Time   `json:"end_time"`
+	BlockDeviceType      string      `json:"block_device_type"`
 	DiskProfile          diskProfile `json:"disk_profile"`
 	Hashes               hashes      `json:"hashes"`
 	UnreadLogicalSectors []int64     `json:"unread_logical_sectors"`
