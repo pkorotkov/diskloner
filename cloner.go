@@ -46,8 +46,8 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("given path does not point to block device")
 		return
 	}
-	// TODO: Wrap with diskProfile structure.
-	dt, ptt, m, sn, pss, lss, c := GetDiskProfile(disk)
+	// TODO: Rename to GetDiskInfo.
+	dt, ptt, m, sn, pss, lss, c := GetDiskInfo(disk)
 	iws := newImageWriters(imageFileMode)
 	for _, ip := range imagePaths {
 		if err = iws.AddImageWriter(ip, c); err != nil {
@@ -68,7 +68,7 @@ func (cs *CloningSession) Close() error {
 	return cs.disk.Close()
 }
 
-func (cs *CloningSession) copySectors(progress chan *CloningMessage, reports chan *CloningReport, quit chan os.Signal) {
+func (cs *CloningSession) copySectors(progress chan Message, reports chan *CloningReport, quit chan os.Signal) {
 	defer close(progress)
 	md5h, sha1h, sha256h, sha512h := md5.New(), sha1.New(), sha256.New(), sha512.New()
 	hw := io.MultiWriter(md5h, sha1h, sha256h, sha512h, cs.imageWriters)
@@ -84,6 +84,7 @@ func (cs *CloningSession) copySectors(progress chan *CloningMessage, reports cha
 		select {
 		case <-quit:
 			reports <- nil
+			progress <- &AbortedMessage{cs.uuid}
 			return
 		default:
 			n, err := cs.disk.Read(sector)
@@ -112,8 +113,7 @@ func (cs *CloningSession) copySectors(progress chan *CloningMessage, reports cha
 							},
 							UnreadLogicalSectors: unreadSectors,
 						}
-						// TODO: Send completed message.
-						// progress <- &CompletedMessage{cs.uuid}
+						progress <- &CompletedMessage{cs.uuid}
 						return
 					}
 				}
@@ -123,8 +123,7 @@ func (cs *CloningSession) copySectors(progress chan *CloningMessage, reports cha
 			// with destroying all image files.
 			if _, err = hw.Write(sector); err != nil {
 				reports <- nil
-				// TODO: Send error message.
-				// progress <- &AbortedMessage{cs.uuid}
+				progress <- &AbortedMessage{cs.uuid}
 				return
 			}
 			// Report progress.
@@ -132,7 +131,6 @@ func (cs *CloningSession) copySectors(progress chan *CloningMessage, reports cha
 			if p := float64(portion) / float64(cs.diskProfile.Capacity); p >= count*0.0001 {
 				count++
 				progress <- &CloningMessage{
-					cs.name,
 					cs.uuid,
 					int64(portion),
 					cs.diskProfile.Capacity,
@@ -142,7 +140,7 @@ func (cs *CloningSession) copySectors(progress chan *CloningMessage, reports cha
 	}
 }
 
-func (cs *CloningSession) clone(progress chan *CloningMessage, quit chan os.Signal) error {
+func (cs *CloningSession) clone(progress chan Message, quit chan os.Signal) error {
 	reports := make(chan *CloningReport)
 	go cs.copySectors(progress, reports, quit)
 	// Wait for copySectors signals to reports (value - when completed successfully, nil - otherwise).
@@ -156,12 +154,16 @@ func (cs *CloningSession) clone(progress chan *CloningMessage, quit chan os.Sign
 func (cs *CloningSession) Clone(quit chan os.Signal) error {
 	var (
 		done     = make(chan error)
-		progress = make(chan *CloningMessage)
+		progress = make(chan Message)
 	)
 	go func() {
 		done <- cs.clone(progress, quit)
 	}()
 	address := &net.UnixAddr{AppPath.ProgressFile, "unix"}
+	gob.Register(&CloningMessage{})
+	gob.Register(&InquiringMessage{})
+	gob.Register(&CompletedMessage{})
+	gob.Register(&AbortedMessage{})
 	for pm := range progress {
 		conn, err := net.DialUnix("unix", nil, address)
 		if err != nil {
@@ -171,7 +173,7 @@ func (cs *CloningSession) Clone(quit chan os.Signal) error {
 			}
 			continue
 		}
-		err = gob.NewEncoder(conn).Encode(pm)
+		err = gob.NewEncoder(conn).Encode(&pm)
 		if err != nil {
 			log.Error("progress message not sent: %s", err)
 		}

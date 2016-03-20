@@ -17,7 +17,7 @@ var version = "0.2.0"
 var usage = `diskloner is a console app for cloning disks and partitions.
 
 Usage:
-  diskloner status
+  diskloner monitor
   diskloner clone [-n <hfn> | --name <hfn>] <disk-path> <image-path>...
   diskloner inquire <disk-path> <info-path>...
   diskloner -h | --help
@@ -44,7 +44,7 @@ func main() {
 	signal.Notify(quit, unix.SIGTERM)
 	args, _ := Parse(usage, nil, true, version, false)
 	switch {
-	case args["status"]:
+	case args["monitor"]:
 		monitorStatus(quit)
 	case args["clone"]:
 		// Don't allow go further if app isn't run under root.

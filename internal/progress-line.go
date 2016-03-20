@@ -4,34 +4,36 @@ import (
 	. "fmt"
 )
 
-type LineWithSIDAndStateUpdate struct {
+type ProgressLineUpdate struct {
 	Id      int
 	State   string
 	Current int64
+	Total   int64
 }
 
-func (lu *LineWithSIDAndStateUpdate) ID() int {
+func (lu *ProgressLineUpdate) ID() int {
 	return lu.Id
 }
 
-type lineWithSIDAndState struct {
-	sid          string
-	state        string
-	current      int64
-	total, ratio float64
+// Line for displaying generic progress.
+type progressLine struct {
+	sid                   string
+	state                 string
+	current, total, ratio float64
 }
 
-func NewLineWithSIDAndState(sid, state string, total int64) *lineWithSIDAndState {
-	return &lineWithSIDAndState{sid: sid, state: state, total: float64(total)}
+func NewProgressLine(sid string) *progressLine {
+	return &progressLine{sid: sid}
 }
 
-func (l *lineWithSIDAndState) Update(lu LineUpdate) {
-	clu := lu.(*LineWithSIDAndStateUpdate)
-	l.state = clu.State
-	l.current = clu.Current
-	l.ratio = float64(clu.Current) / l.total * 100.0
+func (l *progressLine) Update(lu LineUpdate) {
+	plu := lu.(*ProgressLineUpdate)
+	l.state = plu.State
+	l.current = float64(plu.Current)
+	l.total = float64(plu.Total)
+	l.ratio = l.current / l.total * 100.0
 }
 
-func (l *lineWithSIDAndState) String() string {
+func (l *progressLine) String() string {
 	return Sprintf("%9s [%s]: %6.2f%%", l.state, l.sid, l.ratio)
 }

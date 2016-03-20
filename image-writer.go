@@ -46,10 +46,6 @@ func (iw *imageWriter) Abort() error {
 	return abort(iw.file)
 }
 
-// func (iw *imageWriter) Aborted() bool {
-// 	return iw.aborted
-// }
-
 func (iw *imageWriter) Write(bs []byte) (int, error) {
 	return iw.file.Write(bs)
 }

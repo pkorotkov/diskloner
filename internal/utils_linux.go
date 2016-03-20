@@ -78,7 +78,7 @@ func getRHSValue(bs []byte) string {
 	return string(bytes.TrimSpace(bytes.Split(bs, []byte{61})[1]))
 }
 
-func GetDiskProfile(disk *os.File) (dt, ptt, m, sn string, pss, lss int, c int64) {
+func GetDiskInfo(disk *os.File) (dt, ptt, m, sn string, pss, lss int, c int64) {
 	var (
 		err error
 		out []byte

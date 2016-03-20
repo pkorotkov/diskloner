@@ -10,10 +10,33 @@ import (
 	. "./internal"
 )
 
-var lineWithSIDAndStateUpdatePool = sync.Pool{
+var progressLineUpdatePool = sync.Pool{
 	New: func() interface{} {
-		return &LineWithSIDAndStateUpdate{}
+		return &ProgressLineUpdate{}
 	},
+}
+
+func listenForMessage(l *net.UnixListener, messages chan Message) {
+	gob.Register(&CloningMessage{})
+	gob.Register(&InquiringMessage{})
+	gob.Register(&CompletedMessage{})
+	gob.Register(&AbortedMessage{})
+	conn, err := l.AcceptUnix()
+	if err != nil {
+		log.Error("got accept error: %s", err)
+		messages <- nil
+		return
+	}
+	defer conn.Close()
+	var mp Message
+	err = gob.NewDecoder(conn).Decode(&mp)
+	if err != nil {
+		log.Error("failed to read progress message: %s", err)
+		messages <- nil
+		return
+	}
+	messages <- mp
+	return
 }
 
 func monitorStatus(quit chan os.Signal) {
@@ -24,41 +47,34 @@ func monitorStatus(quit chan os.Signal) {
 		return
 	}
 	defer os.Remove(AppPath.ProgressFile)
-	messages := make(chan *CloningMessage)
+	messages := make(chan Message)
 	sessions := make(map[string]int)
 	p := NewProgress()
 	defer p.Close()
 	for {
-		go func(m chan *CloningMessage) {
-			var mp CloningMessage
-			conn, err := l.AcceptUnix()
-			if err != nil {
-				log.Error("got accept error: %s", err)
-				m <- nil
-				return
-			}
-			defer conn.Close()
-			err = gob.NewDecoder(conn).Decode(&mp)
-			if err != nil {
-				log.Error("failed to read progress message: %s", err)
-				m <- nil
-				return
-			}
-			m <- &mp
-			return
-		}(messages)
+		go listenForMessage(l, messages)
 		select {
-		case m := <-messages:
-			if m != nil {
-				_, ok := sessions[m.UUID]
+		case message := <-messages:
+			if message != nil {
+				_, ok := sessions[message.UUID()]
 				if !ok {
-					sid := Sprintf("%s...%s", m.UUID[0:6], m.UUID[32:36])
-					sessions[m.UUID] = p.AddLine(NewLineWithSIDAndState(sid, "TODO", m.TotalBytes))
+					sid := Sprintf("%s...%s", message.UUID()[0:6], message.UUID()[32:36])
+					sessions[message.UUID()] = p.AddLine(NewProgressLine(sid))
 				}
-				l := lineWithSIDAndStateUpdatePool.Get().(*LineWithSIDAndStateUpdate)
-				l.Id, l.State, l.Current = sessions[m.UUID], "TODO", m.CopiedBytes
+				l := progressLineUpdatePool.Get().(*ProgressLineUpdate)
+				l.Id = sessions[message.UUID()]
+				switch m := message.(type) {
+				case *CloningMessage:
+					l.State = "Cloning"
+					l.Current = m.CopiedBytes
+					l.Total = m.TotalBytes
+				case *CompletedMessage:
+					l.State = "Completed"
+				case *AbortedMessage:
+					l.State = "Aborted"
+				}
 				p.UpdateLine(l)
-				lineWithSIDAndStateUpdatePool.Put(l)
+				progressLineUpdatePool.Put(l)
 			}
 		case <-quit:
 			return
