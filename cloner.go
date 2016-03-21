@@ -159,6 +159,7 @@ func (cs *CloningSession) Clone(quit chan os.Signal) error {
 	go func() {
 		done <- cs.clone(progress, quit)
 	}()
+	// Register all types of messages.
 	gob.Register(&CloningMessage{})
 	gob.Register(&InquiringMessage{})
 	gob.Register(&CompletedMessage{})
@@ -176,7 +177,6 @@ func (cs *CloningSession) Clone(quit chan os.Signal) error {
 				if !strings.HasSuffix(err.Error(), "no such file or directory") {
 					log.Warning("failed to establish connection with monitor: %s", err)
 				}
-				log.Error("got unexpected error while dialing monitoring socket: %s", err)
 				continue
 			}
 			err = gob.NewEncoder(conn).Encode(&pm)

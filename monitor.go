@@ -19,6 +19,7 @@ var progressLineUpdatePool = sync.Pool{
 }
 
 func listenForMessage(ul *net.UnixListener, messages chan Message) {
+	// Register all types of messages.
 	gob.Register(&CloningMessage{})
 	gob.Register(&InquiringMessage{})
 	gob.Register(&CompletedMessage{})
@@ -52,8 +53,8 @@ func MonitorStatus(quit chan os.Signal) {
 	defer os.Remove(file)
 	messages := make(chan Message)
 	sessions := make(map[string]int)
-	p := NewProgress()
-	defer p.Close()
+	progress := NewProgress()
+	defer progress.Close()
 	for {
 		go listenForMessage(ul, messages)
 		select {
@@ -62,7 +63,7 @@ func MonitorStatus(quit chan os.Signal) {
 				_, ok := sessions[message.UUID()]
 				if !ok {
 					sid := Sprintf("%s...%s", message.UUID()[0:6], message.UUID()[32:36])
-					sessions[message.UUID()] = p.AddLine(NewProgressLine(sid))
+					sessions[message.UUID()] = progress.AddLine(NewProgressLine(sid))
 				}
 				l := progressLineUpdatePool.Get().(*ProgressLineUpdate)
 				l.Id = sessions[message.UUID()]
@@ -76,7 +77,7 @@ func MonitorStatus(quit chan os.Signal) {
 				case *AbortedMessage:
 					l.State = "Aborted"
 				}
-				p.UpdateLine(l)
+				progress.UpdateLine(l)
 				progressLineUpdatePool.Put(l)
 			}
 		case <-quit:
