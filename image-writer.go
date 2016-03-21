@@ -2,30 +2,31 @@ package main
 
 import (
 	"os"
+	"sync"
 
 	. "./internal"
 )
 
 type imageWriter struct {
-	// TODO: Add lock.
-	aborted bool
-	file    *os.File
+	abortOnce sync.Once
+	aborted   bool
+	file      *os.File
 }
 
-func newImageWriter(ip string, c int64, m os.FileMode) (*imageWriter, error) {
-	var err error
-	if err = CreateDirectoriesFor(FSEntity.File, ip); err != nil {
-		return nil, err
+func newImageWriter(ip string, c int64, m os.FileMode) (iw *imageWriter, err error) {
+	if err = CreatePathFor(FSEntity.File, ip); err != nil {
+		return
 	}
 	var file *os.File
 	if file, err = os.OpenFile(ip, os.O_WRONLY|os.O_CREATE, m); err != nil {
-		return nil, err
+		return
 	}
 	if err = file.Truncate(c); err != nil {
 		_ = abort(file)
-		return nil, err
+		return
 	}
-	return &imageWriter{false, file}, nil
+	iw = &imageWriter{file: file}
+	return
 }
 
 func (iw *imageWriter) Close() error {
@@ -41,9 +42,13 @@ func abort(file *os.File) error {
 	return os.Remove(p)
 }
 
-func (iw *imageWriter) Abort() error {
-	iw.aborted = true
-	return abort(iw.file)
+func (iw *imageWriter) Abort() (err error) {
+	iw.abortOnce.Do(func() {
+		iw.aborted = true
+		err = abort(iw.file)
+		return
+	})
+	return
 }
 
 func (iw *imageWriter) Write(bs []byte) (int, error) {

@@ -43,31 +43,38 @@ func main() {
 	signal.Notify(quit, unix.SIGINT)
 	signal.Notify(quit, unix.SIGTERM)
 	args, _ := Parse(usage, nil, true, version, false)
+	err := InitializeApp()
+	if err != nil {
+		log.Error("failed to initialize app: %s", err)
+		safe.Exit(1)
+	}
 	switch {
 	case args["monitor"]:
-		monitorStatus(quit)
+		MonitorStatus(quit)
 	case args["clone"]:
 		// Don't allow go further if app isn't run under root.
 		if !IsRoot() {
 			log.Error("application requires root privileges")
-			safe.Exit(1)
+			safe.Exit(2)
 		}
-		cs, err := NewCloningSession(args["--name"].(string), args["<disk-path>"].(string), args["<image-path>"].([]string))
+		var cs *CloningSession
+		cs, err = NewCloningSession(args["--name"].(string), args["<disk-path>"].(string), args["<image-path>"].([]string))
 		if err != nil {
 			log.Error("failed to create cloner: %s", err)
-			safe.Exit(2)
+			safe.Exit(3)
 		}
 		defer cs.Close()
 		err = cs.Clone(quit)
 		if err != nil {
 			log.Error("failed to perform cloning: %s", err)
-			safe.Exit(3)
+			safe.Exit(4)
 		}
 	case args["inquire"]:
 		// TODO: Implement it.
+		// Reserved error exit code is 5.
 	default:
 		log.Error("invalid set of arguments")
-		safe.Exit(4)
+		safe.Exit(6)
 	}
 	safe.Exit(0)
 }

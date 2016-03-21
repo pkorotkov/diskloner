@@ -15,7 +15,7 @@ var FSEntity struct {
 	File, Directory fsEntity
 }{1, 2}
 
-func CreateDirectoriesFor(fse fsEntity, path string) (err error) {
+func CreatePathFor(fse fsEntity, path string) (err error) {
 	var d string
 	switch fse {
 	case FSEntity.File:
@@ -37,7 +37,7 @@ func GetUnixDomainSocketsInDirectory(dp string) (ss []string, err error) {
 	}
 	for _, fi := range fis {
 		if fi.Mode()&os.ModeSocket != 0 {
-			ss = append(ss, fi.Name())
+			ss = append(ss, filepath.Join(dp, fi.Name()))
 		}
 	}
 	return

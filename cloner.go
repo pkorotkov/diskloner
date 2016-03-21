@@ -25,12 +25,12 @@ var (
 )
 
 type CloningSession struct {
-	name         string
-	uuid         string
-	bdType       string
-	diskProfile  diskProfile
-	disk         *os.File
-	imageWriters *imageWriters
+	name            string
+	uuid            string
+	blockDeviceType string
+	diskProfile     diskProfile
+	disk            *os.File
+	imageWriters    *imageWriters
 }
 
 func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningSession, err error) {
@@ -47,19 +47,14 @@ func NewCloningSession(name, diskPath string, imagePaths []string) (cs *CloningS
 		err = Errorf("given path does not point to block device")
 		return
 	}
-	dt, ptt, m, sn, pss, lss, c := GetDiskInfo(disk)
+	bdt, ptt, m, sn, pss, lss, c := GetDiskInfo(disk)
 	iws := newImageWriters(imageFileMode)
 	for _, ip := range imagePaths {
 		if err = iws.AddImageWriter(ip, c); err != nil {
 			return
 		}
 	}
-	// TODO: Rework it to creating folder and move to the global app init function.
-	if err = CreateDirectoriesFor(FSEntity.File, AppPath.ProgressFile); err != nil {
-		err = Errorf("failed to create directory for progress file: %s", err)
-		return
-	}
-	cs = &CloningSession{name, GetUUID(), dt, diskProfile{ptt, m, sn, pss, lss, c}, disk, iws}
+	cs = &CloningSession{name, GetUUID(), bdt, diskProfile{ptt, m, sn, pss, lss, c}, disk, iws}
 	return
 }
 
@@ -85,6 +80,7 @@ func (cs *CloningSession) copySectors(progress chan Message, reports chan *Cloni
 		case <-quit:
 			reports <- nil
 			progress <- &AbortedMessage{cs.uuid}
+			// TODO: Clean all unfinished images.
 			return
 		default:
 			n, err := cs.disk.Read(sector)
@@ -104,7 +100,7 @@ func (cs *CloningSession) copySectors(progress chan Message, reports chan *Cloni
 							UUID:            cs.uuid,
 							StartTime:       ts,
 							EndTime:         time.Now(),
-							BlockDeviceType: cs.bdType,
+							BlockDeviceType: cs.blockDeviceType,
 							DiskProfile:     cs.diskProfile,
 							Hashes: hashes{
 								Sprintf("%x", md5h.Sum(nil)),
@@ -125,6 +121,7 @@ func (cs *CloningSession) copySectors(progress chan Message, reports chan *Cloni
 			if _, err = hw.Write(sector); err != nil {
 				reports <- nil
 				progress <- &AbortedMessage{cs.uuid}
+				// TODO: Clean all unfinished images.
 				return
 			}
 			// Report progress.
@@ -141,15 +138,17 @@ func (cs *CloningSession) copySectors(progress chan Message, reports chan *Cloni
 	}
 }
 
-func (cs *CloningSession) clone(progress chan Message, quit chan os.Signal) error {
+func (cs *CloningSession) clone(progress chan Message, quit chan os.Signal) (err error) {
 	reports := make(chan *CloningReport)
 	go cs.copySectors(progress, reports, quit)
 	// Wait for copySectors signals to reports (value - when completed successfully, nil - otherwise).
-	if r := <-reports; r != nil {
-		rbs, _ := json.MarshalIndent(r, "", "    ")
+	if report := <-reports; report != nil {
+		rbs, _ := json.MarshalIndent(report, "", "    ")
 		cs.imageWriters.DumpReports(rbs)
+	} else {
+		err = Errorf("failed to correctly complete cloning process")
 	}
-	return nil
+	return
 }
 
 func (cs *CloningSession) Clone(quit chan os.Signal) error {
@@ -160,25 +159,32 @@ func (cs *CloningSession) Clone(quit chan os.Signal) error {
 	go func() {
 		done <- cs.clone(progress, quit)
 	}()
-	address := &net.UnixAddr{AppPath.ProgressFile, "unix"}
 	gob.Register(&CloningMessage{})
 	gob.Register(&InquiringMessage{})
 	gob.Register(&CompletedMessage{})
 	gob.Register(&AbortedMessage{})
 	for pm := range progress {
-		conn, err := net.DialUnix("unix", nil, address)
+		udss, err := GetUnixDomainSocketsInDirectory(AppPath.ProgressDirectory)
 		if err != nil {
-			// TODO: Clean it up somehow.
-			if !strings.HasSuffix(err.Error(), "no such file or directory") {
-				log.Warning("failed to establish monitoring connection: %s", err)
-			}
+			log.Error("failed to get monitor sockets: %s", err)
 			continue
 		}
-		err = gob.NewEncoder(conn).Encode(&pm)
-		if err != nil {
-			log.Error("progress message not sent: %s", err)
+		for _, uds := range udss {
+			conn, err := net.DialUnix("unix", nil, &net.UnixAddr{uds, "unix"})
+			if err != nil {
+				// TODO: Clean it up somehow.
+				if !strings.HasSuffix(err.Error(), "no such file or directory") {
+					log.Warning("failed to establish connection with monitor: %s", err)
+				}
+				log.Error("got unexpected error while dialing monitoring socket: %s", err)
+				continue
+			}
+			err = gob.NewEncoder(conn).Encode(&pm)
+			if err != nil {
+				log.Error("failed to send progress message: %s", err)
+			}
+			conn.Close()
 		}
-		conn.Close()
 	}
 	// Wait until clone function signals its completetion.
 	return <-done

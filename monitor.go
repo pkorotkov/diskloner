@@ -5,7 +5,9 @@ import (
 	. "fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
+	"time"
 
 	. "./internal"
 )
@@ -16,12 +18,12 @@ var progressLineUpdatePool = sync.Pool{
 	},
 }
 
-func listenForMessage(l *net.UnixListener, messages chan Message) {
+func listenForMessage(ul *net.UnixListener, messages chan Message) {
 	gob.Register(&CloningMessage{})
 	gob.Register(&InquiringMessage{})
 	gob.Register(&CompletedMessage{})
 	gob.Register(&AbortedMessage{})
-	conn, err := l.AcceptUnix()
+	conn, err := ul.AcceptUnix()
 	if err != nil {
 		log.Error("got accept error: %s", err)
 		messages <- nil
@@ -39,20 +41,21 @@ func listenForMessage(l *net.UnixListener, messages chan Message) {
 	return
 }
 
-func monitorStatus(quit chan os.Signal) {
-	// TODO: Make this for multiple monitors.
-	l, err := net.ListenUnix("unix", &net.UnixAddr{AppPath.ProgressFile, "unix"})
+func MonitorStatus(quit chan os.Signal) {
+	// Create a UNIX domain socket server to wait connections from working cloners/inquirers.
+	file := filepath.Join(AppPath.ProgressDirectory, Sprintf("%d", time.Now().UnixNano()))
+	ul, err := net.ListenUnix("unix", &net.UnixAddr{file, "unix"})
 	if err != nil {
 		log.Error("failed to establish monitoring connection: %s", err)
 		return
 	}
-	defer os.Remove(AppPath.ProgressFile)
+	defer os.Remove(file)
 	messages := make(chan Message)
 	sessions := make(map[string]int)
 	p := NewProgress()
 	defer p.Close()
 	for {
-		go listenForMessage(l, messages)
+		go listenForMessage(ul, messages)
 		select {
 		case message := <-messages:
 			if message != nil {
