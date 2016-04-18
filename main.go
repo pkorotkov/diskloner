@@ -4,7 +4,7 @@ import (
 	"os"
 	"os/signal"
 
-	. "./internal"
+	. "github.com/pkorotkov/diskloner/internal"
 
 	. "github.com/docopt/docopt-go"
 	"github.com/pkorotkov/logstick"

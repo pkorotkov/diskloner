@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	. "./internal"
+	. "github.com/pkorotkov/diskloner/internal"
 
 	"golang.org/x/sys/unix"
 )

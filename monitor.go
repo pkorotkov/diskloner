@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	. "./internal"
+	. "github.com/pkorotkov/diskloner/internal"
 )
 
 var progressLineUpdatePool = sync.Pool{

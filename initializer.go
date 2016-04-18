@@ -3,7 +3,7 @@ package main
 import (
 	. "fmt"
 
-	. "./internal"
+	. "github.com/pkorotkov/diskloner/internal"
 )
 
 func InitializeApp() (err error) {

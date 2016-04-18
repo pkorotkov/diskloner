@@ -4,7 +4,7 @@ import (
 	"os"
 	"sync"
 
-	. "./internal"
+	. "github.com/pkorotkov/diskloner/internal"
 )
 
 type imageWriter struct {
