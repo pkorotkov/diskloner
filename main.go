@@ -7,7 +7,7 @@ import (
 	. "github.com/pkorotkov/diskloner/internal"
 
 	. "github.com/docopt/docopt-go"
-	"github.com/pkorotkov/logstick"
+	"github.com/hexbox/logstick"
 	"github.com/pkorotkov/safe"
 	"golang.org/x/sys/unix"
 )
