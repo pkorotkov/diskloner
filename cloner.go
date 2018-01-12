@@ -130,7 +130,7 @@ func (cs *CloningSession) copySectors(progress chan Message, reports chan *Cloni
 				count++
 				progress <- &CloningMessage{
 					cs.uuid,
-					int64(portion),
+					portion,
 					cs.diskProfile.Capacity,
 				}
 			}
