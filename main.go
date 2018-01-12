@@ -12,21 +12,26 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var version = "1.0.0"
+var version = "v1.0.1"
 
 var usage = `diskloner is a console app for cloning disks and partitions.
 
 Usage:
   diskloner monitor
-  diskloner clone [-n <hfn> | --name <hfn>] <disk-path> <image-path>...
+  diskloner clone [-n <session-name> | --name <session-name>] <disk-path> <image-path>...
   diskloner inquire <disk-path> <info-path>...
   diskloner -h | --help
   diskloner -v | --version
 
 Options:
-  -n <hfn>, --name <hfn>  Human friendly name of cloning session [default: -].
-  -h, --help              Show this message.
-  -v, --version           Show version.`
+  -n <session-name>, --name <session-name>  Human friendly name of cloning session [default: -].
+  -h, --help                                Show this message.
+  -v, --version                             Show version.
+
+Commands:
+  monitor  Start monitoring local cloning processes.
+  clone    Start a named cloning process (session).
+  inquire  To be implemented.`
 
 var (
 	log = logstick.NewLogger()
@@ -39,22 +44,30 @@ func init() {
 func main() {
 	defer safe.CatchExit()
 	defer log.Close()
+	var err error
+	// Quit channel is controlled by OS signals.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, unix.SIGINT)
 	signal.Notify(quit, unix.SIGTERM)
 	args, _ := Parse(usage, nil, true, version, false)
-	err := InitializeApp()
-	if err != nil {
-		log.Error("failed to initialize app: %s", err)
+	// Do all neccessary initialization.
+	// For now it's not allowed to customize its setup.
+	if err = InitializeApp(); err != nil {
+		if _, ok := err.(ErrProgressDirectory); ok {
+			log.Error("app has not enough privileges: %s", err)
+		} else {
+			log.Error("failed to initialize app: %s", err)
+		}
 		safe.Exit(1)
 	}
+	// Go through commands.
 	switch {
 	case args["monitor"]:
 		MonitorStatus(quit)
 	case args["clone"]:
 		// Don't allow go further if app isn't run under root.
 		if !IsRoot() {
-			log.Error("application requires root privileges")
+			log.Error("app requires root privileges")
 			safe.Exit(2)
 		}
 		var cs *CloningSession
