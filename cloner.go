@@ -72,7 +72,7 @@ func (cs *CloningSession) copySectors(progress chan Message, reports chan *Cloni
 		count         = 1.0
 		portion       = int64(0)
 		sector        = make([]byte, cs.diskProfile.LogicalSectorSize)
-		zeroSector    = make([]byte, cs.diskProfile.LogicalSectorSize, cs.diskProfile.LogicalSectorSize)
+		zeroedSector  = make([]byte, cs.diskProfile.LogicalSectorSize, cs.diskProfile.LogicalSectorSize)
 		ts            = time.Now()
 	)
 	for {
@@ -89,7 +89,7 @@ func (cs *CloningSession) copySectors(progress chan Message, reports chan *Cloni
 				if err != io.EOF {
 					log.Warning("detected unreadable sector at offset %d", cp)
 					unreadSectors = append(unreadSectors, cp)
-					sector, n = zeroSector, cs.diskProfile.LogicalSectorSize
+					sector, n = zeroedSector, cs.diskProfile.LogicalSectorSize
 					// Jump to the next sector.
 					cs.disk.Seek(int64(cs.diskProfile.LogicalSectorSize), 1)
 				} else {
